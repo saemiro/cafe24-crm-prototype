@@ -1,0 +1,234 @@
+{
+  "name": "Cafe24_CRM_Weekly_Retrospective",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 10 * * 0"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Sunday 10AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://neo4j.saemiro.com/db/neo4j/tx/commit",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Basic {{ Buffer.from($env.NEO4J_USER + ':' + $env.NEO4J_PASSWORD).toString('base64') }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ statements: [{ statement: 'MATCH (f:CRM_Feedback) WHERE f.timestamp > datetime() - duration({days: 7}) RETURN f.action as action, count(*) as count, avg(toFloat(f.score_delta)) as avg_score ORDER BY count DESC' }, { statement: 'MATCH (n) WHERE n:CRM_Entity OR n:CRM_Customer OR n:CRM_Order RETURN labels(n)[0] as type, count(n) as count' }] }) }}"
+      },
+      "id": "get-weekly-stats",
+      "name": "Get Weekly Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://qdrant.saemiro.com/collections/cafe24_insights/points/scroll",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ limit: 20, with_payload: true }) }}"
+      },
+      "id": "get-weekly-insights",
+      "name": "Get Weekly Insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "const weeklyStats = $('Get Weekly Stats').first().json.results || [];\nconst insights = $('Get Weekly Insights').first().json.result?.points || [];\n\n// Parse feedback stats\nconst feedbackStats = weeklyStats[0]?.data?.map(d => ({\n  action: d.row[0],\n  count: d.row[1],\n  avg_score: d.row[2]\n})) || [];\n\n// Parse ontology stats\nconst ontologyStats = weeklyStats[1]?.data?.map(d => ({\n  type: d.row[0],\n  count: d.row[1]\n})) || [];\n\n// Count insights by type\nconst insightsByType = {};\ninsights.forEach(p => {\n  const type = p.payload?.type || 'unknown';\n  insightsByType[type] = (insightsByType[type] || 0) + 1;\n});\n\nreturn {\n  week_ending: new Date().toISOString().split('T')[0],\n  feedback_summary: feedbackStats,\n  ontology_summary: ontologyStats,\n  insights_by_type: insightsByType,\n  total_insights: insights.length\n};"
+      },
+      "id": "compile-metrics",
+      "name": "Compile Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://litellm:4000/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.LITELLM_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-3-5-sonnet-20241022', messages: [{ role: 'system', content: '당신은 CRM 시스템 분석가입니다. 주간 데이터를 분석하고 개선 제안을 작성합니다. 한국어로 구조화된 보고서를 작성하세요.' }, { role: 'user', content: '주간 회고 보고서를 작성해주세요. 데이터: ' + JSON.stringify($json) + '. 다음 주에 집중할 3가지 개선점과 실행 계획을 제안해주세요.' }], max_tokens: 2048 }) }}"
+      },
+      "id": "generate-retrospective",
+      "name": "Generate Retrospective",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [950, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const retrospective = $json.choices?.[0]?.message?.content || 'Retrospective failed';\nconst metrics = $('Compile Metrics').first().json;\n\nreturn {\n  week_ending: metrics.week_ending,\n  type: 'weekly_retrospective',\n  metrics: {\n    total_feedback: metrics.feedback_summary.reduce((a, b) => a + b.count, 0),\n    total_insights: metrics.total_insights,\n    ontology_nodes: metrics.ontology_summary.reduce((a, b) => a + b.count, 0)\n  },\n  retrospective: retrospective,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "format-report",
+      "name": "Format Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: '📅 *Weekly Retrospective - Week Ending ' + $json.week_ending + '*\\n\\n📊 *주간 지표*\\n• 총 피드백: ' + $json.metrics.total_feedback + '건\\n• 수집 인사이트: ' + $json.metrics.total_insights + '개\\n• 온톨로지 노드: ' + $json.metrics.ontology_nodes + '개\\n\\n📝 *회고 및 개선 계획*\\n' + $json.retrospective.substring(0, 1000) + '...' }) }}"
+      },
+      "id": "slack-notify",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1450, 400]
+    }
+  ],
+  "connections": {
+    "Sunday 10AM": {
+      "main": [
+        [
+          {
+            "node": "Get Weekly Stats",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Weekly Insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Weekly Stats": {
+      "main": [
+        [
+          {
+            "node": "Compile Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Weekly Insights": {
+      "main": [
+        [
+          {
+            "node": "Compile Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compile Metrics": {
+      "main": [
+        [
+          {
+            "node": "Generate Retrospective",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Retrospective": {
+      "main": [
+        [
+          {
+            "node": "Format Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Report": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Cafe24_CRM_Prototype"
+    },
+    {
+      "name": "Auto_Discovery"
+    }
+  ]
+}

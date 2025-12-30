@@ -1,0 +1,259 @@
+{
+  "name": "Cafe24_CRM_Ontology_Health",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 */6 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Every 6 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://neo4j.saemiro.com/db/neo4j/tx/commit",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Basic {{ Buffer.from($env.NEO4J_USER + ':' + $env.NEO4J_PASSWORD).toString('base64') }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ statements: [{ statement: 'MATCH (n) WHERE n:CRM_Entity OR n:CRM_Customer OR n:CRM_Order OR n:CRM_Product OR n:CRM_Workflow RETURN labels(n)[0] as type, count(n) as count' }, { statement: 'MATCH ()-[r]->() WHERE type(r) STARTS WITH \"CRM_\" OR type(r) IN [\"HAS_PROPERTY\", \"TRIGGERS\", \"USES\", \"BELONGS_TO\", \"CONTAINS\"] RETURN type(r) as relation, count(r) as count ORDER BY count DESC' }, { statement: 'MATCH (n) WHERE (n:CRM_Entity OR n:CRM_Customer) AND NOT (n)--() RETURN count(n) as orphan_count' }] }) }}"
+      },
+      "id": "check-ontology-stats",
+      "name": "Check Ontology Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const results = $json.results || [];\n\n// Parse node counts\nconst nodeCounts = {};\nif (results[0]?.data) {\n  results[0].data.forEach(d => {\n    nodeCounts[d.row[0]] = d.row[1];\n  });\n}\n\n// Parse relationship counts\nconst relationCounts = {};\nif (results[1]?.data) {\n  results[1].data.forEach(d => {\n    relationCounts[d.row[0]] = d.row[1];\n  });\n}\n\n// Get orphan count\nconst orphanCount = results[2]?.data?.[0]?.row?.[0] || 0;\n\n// Calculate health metrics\nconst totalNodes = Object.values(nodeCounts).reduce((a, b) => a + b, 0);\nconst totalRelations = Object.values(relationCounts).reduce((a, b) => a + b, 0);\nconst avgRelationsPerNode = totalNodes > 0 ? (totalRelations / totalNodes).toFixed(2) : 0;\nconst orphanPercentage = totalNodes > 0 ? ((orphanCount / totalNodes) * 100).toFixed(1) : 0;\n\n// Health score calculation\nlet healthScore = 100;\nif (orphanPercentage > 20) healthScore -= 30;\nelse if (orphanPercentage > 10) healthScore -= 15;\nif (avgRelationsPerNode < 1) healthScore -= 20;\nif (totalNodes < 5) healthScore -= 25;\n\nconst healthStatus = healthScore >= 80 ? 'healthy' : healthScore >= 60 ? 'warning' : 'critical';\n\nreturn {\n  timestamp: new Date().toISOString(),\n  node_counts: nodeCounts,\n  relation_counts: relationCounts,\n  total_nodes: totalNodes,\n  total_relations: totalRelations,\n  avg_relations_per_node: parseFloat(avgRelationsPerNode),\n  orphan_count: orphanCount,\n  orphan_percentage: parseFloat(orphanPercentage),\n  health_score: healthScore,\n  health_status: healthStatus\n};"
+      },
+      "id": "calculate-health",
+      "name": "Calculate Health Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.health_status }}",
+              "operation": "notEquals",
+              "value2": "healthy"
+            }
+          ]
+        }
+      },
+      "id": "check-health",
+      "name": "Health Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [950, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://litellm:4000/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.LITELLM_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-3-5-sonnet-20241022', messages: [{ role: 'system', content: '당신은 그래프 데이터베이스 전문가입니다. 온톨로지 건강 상태를 분석하고 개선 방안을 제안합니다. 한국어로 간결하게 응답하세요.' }, { role: 'user', content: '온톨로지 건강 상태가 ' + $json.health_status + '입니다. 점수: ' + $json.health_score + '/100. 고아 노드: ' + $json.orphan_count + '개 (' + $json.orphan_percentage + '%). 노드당 평균 관계: ' + $json.avg_relations_per_node + '. 개선 방안을 3가지 제안해주세요.' }], max_tokens: 512 }) }}"
+      },
+      "id": "get-recommendations",
+      "name": "Get Recommendations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const healthData = $('Calculate Health Metrics').first().json;\nconst recommendations = $json.choices?.[0]?.message?.content || 'No recommendations';\n\nreturn {\n  ...healthData,\n  recommendations: recommendations,\n  alert_sent: true\n};"
+      },
+      "id": "format-alert",
+      "name": "Format Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: '⚠️ *Ontology Health Alert*\\n\\n📊 *상태*: ' + $json.health_status.toUpperCase() + ' (점수: ' + $json.health_score + '/100)\\n\\n📈 *통계*:\\n• 총 노드: ' + $json.total_nodes + '개\\n• 총 관계: ' + $json.total_relations + '개\\n• 노드당 관계: ' + $json.avg_relations_per_node + '\\n• 고아 노드: ' + $json.orphan_count + '개 (' + $json.orphan_percentage + '%)\\n\\n💡 *개선 권고*:\\n' + $json.recommendations.substring(0, 500) }) }}"
+      },
+      "id": "slack-alert",
+      "name": "Slack Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1600, 200]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "https://qdrant.saemiro.com/collections/cafe24_insights/points",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ points: [{ id: Math.floor(Math.random() * 1000000), vector: Array(1536).fill(0).map(() => Math.random() * 0.1), payload: { type: 'ontology_health', timestamp: $('Calculate Health Metrics').first().json.timestamp, health_score: $('Calculate Health Metrics').first().json.health_score, health_status: $('Calculate Health Metrics').first().json.health_status, total_nodes: $('Calculate Health Metrics').first().json.total_nodes, orphan_count: $('Calculate Health Metrics').first().json.orphan_count } }] }) }}"
+      },
+      "id": "store-health-log",
+      "name": "Store Health Log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1200, 400]
+    }
+  ],
+  "connections": {
+    "Every 6 Hours": {
+      "main": [
+        [
+          {
+            "node": "Check Ontology Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Ontology Stats": {
+      "main": [
+        [
+          {
+            "node": "Calculate Health Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Health Metrics": {
+      "main": [
+        [
+          {
+            "node": "Health Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Health Check": {
+      "main": [
+        [
+          {
+            "node": "Get Recommendations",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Store Health Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Recommendations": {
+      "main": [
+        [
+          {
+            "node": "Format Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Alert": {
+      "main": [
+        [
+          {
+            "node": "Slack Alert",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Store Health Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Cafe24_CRM_Prototype"
+    },
+    {
+      "name": "Emergent_Intelligence"
+    }
+  ]
+}

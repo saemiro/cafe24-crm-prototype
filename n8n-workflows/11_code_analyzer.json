@@ -1,0 +1,296 @@
+{
+  "name": "Cafe24_CRM_Code_Analyzer",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 */4 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Every 4 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://neo4j.saemiro.com/db/neo4j/tx/commit",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Basic {{ Buffer.from($env.NEO4J_USER + ':' + $env.NEO4J_PASSWORD).toString('base64') }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ statements: [{ statement: 'MATCH (e:CRM_Entity)-[r]-(related) RETURN e.name as entity, type(r) as relation, labels(related)[0] as related_type, count(*) as count ORDER BY count DESC LIMIT 20' }] }) }}"
+      },
+      "id": "get-entity-patterns",
+      "name": "Get Entity Patterns",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://qdrant.saemiro.com/collections/cafe24_insights/points/scroll",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ limit: 10, with_payload: true, filter: { must: [{ key: 'type', match: { value: 'code_pattern' } }] } }) }}"
+      },
+      "id": "get-existing-patterns",
+      "name": "Get Existing Code Patterns",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const entityPatterns = $('Get Entity Patterns').first().json.results?.[0]?.data || [];\nconst existingPatterns = $('Get Existing Code Patterns').first().json.result?.points || [];\n\n// Format entity patterns for analysis\nconst patterns = entityPatterns.map(d => ({\n  entity: d.row[0],\n  relation: d.row[1],\n  related_type: d.row[2],\n  count: d.row[3]\n}));\n\n// Get existing pattern names for comparison\nconst existingNames = existingPatterns.map(p => p.payload?.name).filter(Boolean);\n\nreturn {\n  entity_patterns: patterns,\n  existing_pattern_count: existingPatterns.length,\n  existing_names: existingNames,\n  analysis_request: `현재 CRM 엔티티 패턴을 분석해주세요: ${JSON.stringify(patterns.slice(0, 10))}. 기존 패턴(${existingNames.join(', ')})과 비교하여 새로운 코드 패턴이나 개선점을 제안해주세요.`\n};"
+      },
+      "id": "prepare-analysis",
+      "name": "Prepare Analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://litellm:4000/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.LITELLM_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-3-5-sonnet-20241022', messages: [{ role: 'system', content: '당신은 E-commerce 코드 패턴 분석가입니다. CRM 엔티티 관계를 분석하고 재사용 가능한 코드 패턴을 식별합니다. 한국어로 응답하세요.' }, { role: 'user', content: $json.analysis_request }], max_tokens: 1024 }) }}"
+      },
+      "id": "analyze-patterns",
+      "name": "Analyze Patterns",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [950, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const analysis = $json.choices?.[0]?.message?.content || 'Analysis failed';\nconst prepData = $('Prepare Analysis').first().json;\n\n// Extract potential new patterns from analysis\nconst newPatterns = [];\nconst lines = analysis.split('\\n');\nlines.forEach((line, idx) => {\n  if (line.includes('패턴') || line.includes('Pattern')) {\n    newPatterns.push({\n      name: `pattern_${Date.now()}_${idx}`,\n      description: line.trim()\n    });\n  }\n});\n\nreturn {\n  timestamp: new Date().toISOString(),\n  type: 'code_analysis',\n  entity_pattern_count: prepData.entity_patterns.length,\n  existing_pattern_count: prepData.existing_pattern_count,\n  new_patterns_found: newPatterns.length,\n  analysis: analysis,\n  patterns: newPatterns.slice(0, 5)\n};"
+      },
+      "id": "extract-patterns",
+      "name": "Extract Patterns",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.new_patterns_found > 0 }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-new-patterns",
+      "name": "Has New Patterns?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1400, 300]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "https://qdrant.saemiro.com/collections/cafe24_insights/points",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ points: [{ id: Math.floor(Math.random() * 1000000), vector: Array(1536).fill(0).map(() => Math.random() * 0.1), payload: { type: 'code_pattern', timestamp: $json.timestamp, analysis: $json.analysis.substring(0, 500), patterns: $json.patterns } }] }) }}"
+      },
+      "id": "store-patterns",
+      "name": "Store New Patterns",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1600, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "return { status: 'no_new_patterns', message: 'No new patterns found in this analysis cycle' };"
+      },
+      "id": "skip-storage",
+      "name": "Skip Storage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1600, 400]
+    }
+  ],
+  "connections": {
+    "Every 4 Hours": {
+      "main": [
+        [
+          {
+            "node": "Get Entity Patterns",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Existing Code Patterns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Entity Patterns": {
+      "main": [
+        [
+          {
+            "node": "Prepare Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Existing Code Patterns": {
+      "main": [
+        [
+          {
+            "node": "Prepare Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Analysis": {
+      "main": [
+        [
+          {
+            "node": "Analyze Patterns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Patterns": {
+      "main": [
+        [
+          {
+            "node": "Extract Patterns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Patterns": {
+      "main": [
+        [
+          {
+            "node": "Has New Patterns?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has New Patterns?": {
+      "main": [
+        [
+          {
+            "node": "Store New Patterns",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Storage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Cafe24_CRM_Prototype"
+    },
+    {
+      "name": "Emergent_Intelligence"
+    }
+  ]
+}

@@ -1,0 +1,234 @@
+{
+  "name": "Cafe24_CRM_Evening_Analysis",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 21 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Evening 9PM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://neo4j.saemiro.com/db/neo4j/tx/commit",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Basic {{ Buffer.from($env.NEO4J_USER + ':' + $env.NEO4J_PASSWORD).toString('base64') }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ statements: [{ statement: 'MATCH (f:CRM_Feedback) WHERE f.timestamp > datetime() - duration({hours: 24}) RETURN f.action as action, count(*) as count ORDER BY count DESC' }] }) }}"
+      },
+      "id": "get-daily-feedback",
+      "name": "Get Daily Feedback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://qdrant.saemiro.com/collections/cafe24_insights/points/scroll",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ limit: 5, with_payload: true, filter: { must: [{ key: 'type', match: { value: 'morning_research' } }] } }) }}"
+      },
+      "id": "get-morning-insights",
+      "name": "Get Morning Insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const feedbackData = $('Get Daily Feedback').first().json.results?.[0]?.data || [];\nconst morningInsights = $('Get Morning Insights').first().json.result?.points || [];\n\n// Analyze patterns\nconst feedbackSummary = feedbackData.map(d => `${d.row[0]}: ${d.row[1]}건`).join(', ');\nconst insightCount = morningInsights.length;\n\nreturn {\n  date: new Date().toISOString().split('T')[0],\n  feedback_summary: feedbackSummary || '피드백 없음',\n  morning_insights_count: insightCount,\n  analysis_request: `오늘의 피드백 현황: ${feedbackSummary || '없음'}. 아침 조사 인사이트 ${insightCount}개를 바탕으로 오늘의 CRM 운영 패턴을 분석하고 개선점을 제안해주세요.`\n};"
+      },
+      "id": "prepare-analysis",
+      "name": "Prepare Analysis",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://litellm:4000/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.LITELLM_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-3-5-sonnet-20241022', messages: [{ role: 'system', content: '당신은 E-commerce CRM 분석가입니다. 일일 운영 데이터를 분석하고 개선점을 제안합니다. 한국어로 간결하게 응답하세요.' }, { role: 'user', content: $json.analysis_request }], max_tokens: 1024 }) }}"
+      },
+      "id": "analyze-patterns",
+      "name": "Analyze Patterns",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const analysis = $json.choices?.[0]?.message?.content || 'Analysis failed';\nconst prepData = $('Prepare Analysis').first().json;\n\nreturn {\n  date: prepData.date,\n  type: 'evening_analysis',\n  feedback_summary: prepData.feedback_summary,\n  morning_insights_count: prepData.morning_insights_count,\n  analysis: analysis,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "format-report",
+      "name": "Format Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: '🌙 *Evening Analysis Report - ' + $json.date + '*\\n\\n📊 *피드백 현황*: ' + $json.feedback_summary + '\\n🔍 *아침 인사이트*: ' + $json.morning_insights_count + '개\\n\\n📝 *분석 결과*:\\n' + $json.analysis.substring(0, 500) + '...' }) }}"
+      },
+      "id": "slack-notify",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1300, 300]
+    }
+  ],
+  "connections": {
+    "Evening 9PM": {
+      "main": [
+        [
+          {
+            "node": "Get Daily Feedback",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Morning Insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Daily Feedback": {
+      "main": [
+        [
+          {
+            "node": "Prepare Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Morning Insights": {
+      "main": [
+        [
+          {
+            "node": "Prepare Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Analysis": {
+      "main": [
+        [
+          {
+            "node": "Analyze Patterns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Patterns": {
+      "main": [
+        [
+          {
+            "node": "Format Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Report": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Cafe24_CRM_Prototype"
+    },
+    {
+      "name": "Auto_Discovery"
+    }
+  ]
+}

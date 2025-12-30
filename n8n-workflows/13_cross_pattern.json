@@ -1,0 +1,343 @@
+{
+  "name": "Cafe24_CRM_Cross_Pattern",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 */8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Every 8 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://qdrant.saemiro.com/collections/cafe24_insights/points/scroll",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ limit: 30, with_payload: true, with_vector: false }) }}"
+      },
+      "id": "get-all-insights",
+      "name": "Get All Insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://neo4j.saemiro.com/db/neo4j/tx/commit",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Basic {{ Buffer.from($env.NEO4J_USER + ':' + $env.NEO4J_PASSWORD).toString('base64') }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ statements: [{ statement: 'MATCH (e1:CRM_Entity)-[r1]-(shared)-[r2]-(e2:CRM_Entity) WHERE e1 <> e2 RETURN e1.name as entity1, type(r1) as rel1, labels(shared)[0] as shared_type, type(r2) as rel2, e2.name as entity2, count(*) as connections ORDER BY connections DESC LIMIT 15' }] }) }}"
+      },
+      "id": "get-entity-connections",
+      "name": "Get Entity Connections",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const insights = $('Get All Insights').first().json.result?.points || [];\nconst connections = $('Get Entity Connections').first().json.results?.[0]?.data || [];\n\n// Group insights by type\nconst insightsByType = {};\ninsights.forEach(p => {\n  const type = p.payload?.type || 'unknown';\n  if (!insightsByType[type]) insightsByType[type] = [];\n  insightsByType[type].push(p.payload);\n});\n\n// Format entity connections\nconst entityConnections = connections.map(d => ({\n  entity1: d.row[0],\n  relation1: d.row[1],\n  shared_type: d.row[2],\n  relation2: d.row[3],\n  entity2: d.row[4],\n  connection_count: d.row[5]\n}));\n\n// Find cross-domain patterns\nconst crossDomainPatterns = [];\nconst types = Object.keys(insightsByType);\nfor (let i = 0; i < types.length; i++) {\n  for (let j = i + 1; j < types.length; j++) {\n    if (insightsByType[types[i]].length > 0 && insightsByType[types[j]].length > 0) {\n      crossDomainPatterns.push({\n        domain1: types[i],\n        domain2: types[j],\n        count1: insightsByType[types[i]].length,\n        count2: insightsByType[types[j]].length\n      });\n    }\n  }\n}\n\nreturn {\n  timestamp: new Date().toISOString(),\n  total_insights: insights.length,\n  insight_types: Object.keys(insightsByType).length,\n  insights_by_type: Object.fromEntries(Object.entries(insightsByType).map(([k, v]) => [k, v.length])),\n  entity_connections: entityConnections.slice(0, 10),\n  cross_domain_patterns: crossDomainPatterns,\n  analysis_context: JSON.stringify({ types: Object.keys(insightsByType), connections: entityConnections.slice(0, 5) })\n};"
+      },
+      "id": "analyze-cross-patterns",
+      "name": "Analyze Cross Patterns",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://litellm:4000/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.LITELLM_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-3-5-sonnet-20241022', messages: [{ role: 'system', content: '당신은 패턴 발견 전문가입니다. 서로 다른 도메인 간의 숨겨진 연결과 패턴을 발견합니다. 한국어로 응답하세요.' }, { role: 'user', content: '다음 데이터에서 크로스-도메인 패턴을 발견해주세요. 인사이트 타입: ' + JSON.stringify($json.insights_by_type) + '. 엔티티 연결: ' + JSON.stringify($json.entity_connections.slice(0, 5)) + '. 도메인 간 숨겨진 관계나 새로운 통찰을 제안해주세요.' }], max_tokens: 1024 }) }}"
+      },
+      "id": "discover-patterns",
+      "name": "Discover Hidden Patterns",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [950, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const analysis = $json.choices?.[0]?.message?.content || 'No patterns discovered';\nconst crossData = $('Analyze Cross Patterns').first().json;\n\n// Extract discovered patterns\nconst discoveredPatterns = [];\nconst lines = analysis.split('\\n');\nlines.forEach((line, idx) => {\n  if (line.match(/\\d+\\.|•|-/) && line.length > 20) {\n    discoveredPatterns.push(line.trim());\n  }\n});\n\nreturn {\n  timestamp: crossData.timestamp,\n  type: 'cross_pattern_discovery',\n  total_insights: crossData.total_insights,\n  insight_types: crossData.insight_types,\n  cross_domain_count: crossData.cross_domain_patterns.length,\n  entity_connections_analyzed: crossData.entity_connections.length,\n  discovery_analysis: analysis,\n  discovered_patterns: discoveredPatterns.slice(0, 5)\n};"
+      },
+      "id": "format-discovery",
+      "name": "Format Discovery",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.discovered_patterns.length }}",
+              "operation": "largerEqual",
+              "value2": 2
+            }
+          ]
+        }
+      },
+      "id": "significant-discovery",
+      "name": "Significant Discovery?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1400, 300]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "https://qdrant.saemiro.com/collections/cafe24_insights/points",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ points: [{ id: Math.floor(Math.random() * 1000000), vector: Array(1536).fill(0).map(() => Math.random() * 0.1), payload: { type: 'cross_pattern', timestamp: $json.timestamp, patterns_count: $json.discovered_patterns.length, analysis_summary: $json.discovery_analysis.substring(0, 500), patterns: $json.discovered_patterns } }] }) }}"
+      },
+      "id": "store-discovery",
+      "name": "Store Discovery",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1600, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://neo4j.saemiro.com/db/neo4j/tx/commit",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Basic {{ Buffer.from($env.NEO4J_USER + ':' + $env.NEO4J_PASSWORD).toString('base64') }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ statements: [{ statement: 'MERGE (p:CRM_Pattern {name: $name}) SET p.type = \"cross_domain\", p.discovered_at = datetime(), p.patterns_count = $count, p.summary = $summary', parameters: { name: 'cross_pattern_' + Date.now(), count: $json.discovered_patterns.length, summary: $json.discovered_patterns.slice(0, 2).join('; ') } }] }) }}"
+      },
+      "id": "update-ontology",
+      "name": "Update Ontology",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1800, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "return { status: 'no_significant_patterns', message: 'No significant cross-domain patterns discovered this cycle' };"
+      },
+      "id": "skip-storage",
+      "name": "Skip Storage",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1600, 400]
+    }
+  ],
+  "connections": {
+    "Every 8 Hours": {
+      "main": [
+        [
+          {
+            "node": "Get All Insights",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Entity Connections",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Insights": {
+      "main": [
+        [
+          {
+            "node": "Analyze Cross Patterns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Entity Connections": {
+      "main": [
+        [
+          {
+            "node": "Analyze Cross Patterns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Cross Patterns": {
+      "main": [
+        [
+          {
+            "node": "Discover Hidden Patterns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Discover Hidden Patterns": {
+      "main": [
+        [
+          {
+            "node": "Format Discovery",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Discovery": {
+      "main": [
+        [
+          {
+            "node": "Significant Discovery?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Significant Discovery?": {
+      "main": [
+        [
+          {
+            "node": "Store Discovery",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Skip Storage",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Discovery": {
+      "main": [
+        [
+          {
+            "node": "Update Ontology",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Cafe24_CRM_Prototype"
+    },
+    {
+      "name": "Emergent_Intelligence"
+    }
+  ]
+}

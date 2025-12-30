@@ -1,0 +1,162 @@
+{
+  "name": "Cafe24_CRM_Ontology_Builder",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cafe24-crm/ontology/build",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://raw.githubusercontent.com/saemiro/cafe24-crm-prototype/main/docs/domain.yaml",
+        "options": {}
+      },
+      "id": "fetch-domain-yaml",
+      "name": "Fetch Domain YAML",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse domain.yaml and convert to Cypher statements\nconst yaml = require('yaml');\nconst domainYaml = $json.data;\n\n// For demo, we'll generate basic entity creation statements\nconst statements = [];\n\n// Create entity type nodes\nconst entities = ['Customer', 'Order', 'Product', 'Campaign', 'CustomerSegment'];\nentities.forEach(entity => {\n  statements.push({\n    statement: `MERGE (e:CRM_Entity {name: $name}) SET e.type = 'entity', e.updated_at = datetime()`,\n    parameters: { name: entity }\n  });\n});\n\n// Create workflow nodes\nconst workflows = ['OrderLifecycle', 'CampaignExecution'];\nworkflows.forEach(wf => {\n  statements.push({\n    statement: `MERGE (w:CRM_Workflow {name: $name}) SET w.updated_at = datetime()`,\n    parameters: { name: wf }\n  });\n});\n\nreturn {\n  statements,\n  entity_count: entities.length,\n  workflow_count: workflows.length\n};"
+      },
+      "id": "parse-yaml",
+      "name": "Parse YAML to Cypher",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://neo4j.saemiro.com/db/neo4j/tx/commit",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Basic {{ Buffer.from($env.NEO4J_USER + ':' + $env.NEO4J_PASSWORD).toString('base64') }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ statements: $json.statements }) }}"
+      },
+      "id": "execute-cypher",
+      "name": "Execute Cypher",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const neo4jResult = $json;\nconst parseResult = $('Parse YAML to Cypher').first().json;\n\nreturn {\n  status: 'success',\n  entities_updated: parseResult.entity_count,\n  workflows_updated: parseResult.workflow_count,\n  neo4j_response: neo4jResult.results?.length || 0,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "format-result",
+      "name": "Format Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1250, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Fetch Domain YAML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Domain YAML": {
+      "main": [
+        [
+          {
+            "node": "Parse YAML to Cypher",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse YAML to Cypher": {
+      "main": [
+        [
+          {
+            "node": "Execute Cypher",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Cypher": {
+      "main": [
+        [
+          {
+            "node": "Format Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Result": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Cafe24_CRM_Prototype"
+    }
+  ]
+}
