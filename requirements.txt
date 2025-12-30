@@ -1,0 +1,14 @@
+# Cafe24 CRM Prototype Dependencies
+
+# Embedding & NLP
+sentence-transformers>=2.2.0
+torch>=2.0.0
+
+# HTTP & API
+requests>=2.28.0
+
+# Utilities
+python-dotenv>=1.0.0
+
+# Data processing
+pyyaml>=6.0

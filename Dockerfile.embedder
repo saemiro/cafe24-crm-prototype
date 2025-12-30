@@ -1,0 +1,17 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy scripts
+COPY scripts/collect_cafe24_docs.py ./
+
+# Environment variables
+ENV QDRANT_URL=https://qdrant.saemiro.com
+ENV CF_ACCESS_CLIENT_ID=33fc2fac58bf5237d16ac159db51b46b.access
+ENV CF_ACCESS_CLIENT_SECRET=7251ba3d0093523b81898e1df292ba8531b48db96d981224c8612fb1f3c1183c
+
+CMD ["python", "collect_cafe24_docs.py"]
