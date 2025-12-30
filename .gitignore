@@ -1,0 +1,52 @@
+# Environment files
+.env
+.env.local
+*.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+venv/
+.venv/
+
+# Node.js
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build outputs
+dist/
+build/
+target/
+*.jar
+
+# Logs
+logs/
+*.log
+
+# Data files (may contain sensitive info)
+data/*.json
+data/*.csv
+!data/.gitkeep
+
+# Experiment outputs
+experiments/outputs/
+experiments/models/
+!experiments/.gitkeep
+
+# Temporary files
+tmp/
+temp/
+*.tmp

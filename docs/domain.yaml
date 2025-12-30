@@ -1,0 +1,168 @@
+# Cafe24 CRM Prototype - Domain Ontology
+# This file defines the CRM domain model for AI understanding
+# Neo4j labels will be prefixed with CRM_ for separation from Light CRM
+
+version: "1.0"
+domain: "cafe24_crm_prototype"
+description: "E-commerce CRM domain model for Cafe24 platform"
+
+# Core Entities (CRM_Entity in Neo4j)
+entities:
+  Customer:
+    description: "End customer who purchases from Cafe24 mall"
+    attributes:
+      - id: "unique customer identifier"
+      - email: "contact email"
+      - name: "customer name"
+      - phone: "contact phone"
+      - created_at: "registration date"
+      - membership_level: "VIP, Gold, Silver, Bronze"
+    relationships:
+      - PLACES: Order
+      - HAS_ADDRESS: Address
+      - RECEIVES: Notification
+
+  Order:
+    description: "Purchase transaction"
+    attributes:
+      - id: "order number"
+      - status: "pending, paid, shipped, delivered, cancelled"
+      - total_amount: "order total"
+      - created_at: "order date"
+      - payment_method: "card, bank, virtual"
+    relationships:
+      - CONTAINS: OrderItem
+      - SHIPPED_TO: Address
+      - PAID_BY: Payment
+
+  Product:
+    description: "Item available for sale"
+    attributes:
+      - id: "product code"
+      - name: "product name"
+      - price: "selling price"
+      - stock: "available quantity"
+      - category: "product category"
+    relationships:
+      - BELONGS_TO: Category
+      - HAS_VARIANT: ProductVariant
+
+  Campaign:
+    description: "Marketing campaign"
+    attributes:
+      - id: "campaign identifier"
+      - name: "campaign name"
+      - type: "email, sms, push, popup"
+      - status: "draft, active, paused, completed"
+      - start_date: "campaign start"
+      - end_date: "campaign end"
+    relationships:
+      - TARGETS: CustomerSegment
+      - SENDS: Notification
+      - OFFERS: Coupon
+
+  CustomerSegment:
+    description: "Group of customers with similar characteristics"
+    attributes:
+      - id: "segment identifier"
+      - name: "segment name"
+      - criteria: "segmentation rules (JSON)"
+      - count: "number of customers"
+    relationships:
+      - INCLUDES: Customer
+
+# Workflows (CRM_Workflow in Neo4j)
+workflows:
+  OrderLifecycle:
+    description: "Order state transitions"
+    states:
+      - pending: "Order created, awaiting payment"
+      - paid: "Payment confirmed"
+      - preparing: "Preparing for shipment"
+      - shipped: "Package sent"
+      - delivered: "Customer received"
+      - cancelled: "Order cancelled"
+      - refunded: "Refund processed"
+    triggers:
+      - payment_received: "pending → paid"
+      - shipment_created: "paid → shipped"
+      - delivery_confirmed: "shipped → delivered"
+
+  CampaignExecution:
+    description: "Marketing campaign workflow"
+    states:
+      - draft: "Campaign being designed"
+      - scheduled: "Waiting for start time"
+      - active: "Campaign running"
+      - paused: "Temporarily stopped"
+      - completed: "Campaign ended"
+    triggers:
+      - publish: "draft → scheduled"
+      - start_time: "scheduled → active"
+      - pause: "active → paused"
+      - resume: "paused → active"
+      - end_time: "active → completed"
+
+# Integrations (CRM_Integration in Neo4j)
+integrations:
+  Cafe24API:
+    description: "Cafe24 E-commerce Platform API"
+    endpoints:
+      - customers: "/api/v2/admin/customers"
+      - orders: "/api/v2/admin/orders"
+      - products: "/api/v2/admin/products"
+      - categories: "/api/v2/admin/categories"
+    auth_type: "oauth2"
+    rate_limit: "1000 requests/minute"
+
+  SlackNotification:
+    description: "Team notifications"
+    webhook_type: "incoming_webhook"
+    use_cases:
+      - "High-value order alert"
+      - "Campaign performance summary"
+      - "Customer complaint escalation"
+
+  EmailService:
+    description: "Transactional and marketing emails"
+    provider: "cafe24_mail"
+    templates:
+      - order_confirmation
+      - shipping_notification
+      - campaign_promotional
+
+# AI Enhancement Points
+ai_enhancement_points:
+  customer_segmentation:
+    description: "AI-powered customer clustering"
+    input: "Purchase history, browsing behavior, demographics"
+    output: "Recommended segments with confidence scores"
+
+  campaign_optimization:
+    description: "Optimal send time and content suggestions"
+    input: "Historical campaign performance, customer preferences"
+    output: "Best send time, subject line variations, content recommendations"
+
+  churn_prediction:
+    description: "Identify at-risk customers"
+    input: "Recent activity, purchase frequency, support tickets"
+    output: "Churn probability, recommended retention actions"
+
+  product_recommendation:
+    description: "Personalized product suggestions"
+    input: "Purchase history, browsing behavior, similar customers"
+    output: "Ranked product recommendations with reasoning"
+
+# Metrics (for dashboard display)
+key_metrics:
+  - name: "Daily Active Customers"
+    query: "MATCH (c:CRM_Customer)-[:PLACES]->(o:CRM_Order) WHERE o.created_at > date() - duration({days: 1}) RETURN count(DISTINCT c)"
+
+  - name: "Order Conversion Rate"
+    query: "MATCH (v:CRM_Visit), (o:CRM_Order) WHERE v.date = o.date RETURN count(o) * 100.0 / count(v)"
+
+  - name: "Campaign ROI"
+    query: "MATCH (c:CRM_Campaign)-[:GENERATES]->(r:CRM_Revenue) RETURN (sum(r.amount) - c.cost) / c.cost * 100"
+
+  - name: "Customer Lifetime Value"
+    query: "MATCH (c:CRM_Customer)-[:PLACES]->(o:CRM_Order) RETURN c.id, sum(o.total_amount) as ltv ORDER BY ltv DESC"
