@@ -1,0 +1,262 @@
+{
+  "name": "Cafe24_CRM_Code_Generator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cafe24-crm/generate",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://qdrant.saemiro.com/collections/cafe24_api_docs/points/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ vector: $json.embedding, limit: 5, with_payload: true }) }}"
+      },
+      "id": "qdrant-search",
+      "name": "Qdrant Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://neo4j.saemiro.com/db/neo4j/tx/commit",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Basic {{ Buffer.from($env.NEO4J_USER + ':' + $env.NEO4J_PASSWORD).toString('base64') }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ statements: [{ statement: 'MATCH (e:CRM_Entity) RETURN e.name as name, e.description as description LIMIT 10' }] }) }}"
+      },
+      "id": "neo4j-context",
+      "name": "Neo4j Context",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://litellm:4000/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.LITELLM_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'text-embedding-3-small', input: $json.body.request }) }}"
+      },
+      "id": "generate-embedding",
+      "name": "Generate Embedding",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge Qdrant and Neo4j context\nconst qdrantResults = $('Qdrant Search').first().json.result || [];\nconst neo4jResults = $('Neo4j Context').first().json.results?.[0]?.data || [];\nconst userRequest = $('Webhook').first().json.body.request;\n\n// Build RAG context\nconst ragContext = qdrantResults\n  .map(r => r.payload?.text || '')\n  .join('\\n\\n---\\n\\n');\n\n// Build Ontology context\nconst ontologyContext = neo4jResults\n  .map(r => `- ${r.row[0]}: ${r.row[1]}`)\n  .join('\\n');\n\nreturn {\n  userRequest,\n  ragContext,\n  ontologyContext,\n  prompt: `당신은 Cafe24 CRM 전문가입니다.\n\n## 관련 API 문서:\n${ragContext}\n\n## 도메인 모델:\n${ontologyContext}\n\n## 요청:\n${userRequest}\n\n## 지시사항:\n1. Cafe24 API 표준을 따르세요\n2. 에러 처리를 포함하세요\n3. 타입 힌트를 사용하세요\n4. 한국어로 주석을 작성하세요`\n};"
+      },
+      "id": "merge-context",
+      "name": "Merge Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://litellm:4000/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.LITELLM_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-3-5-sonnet-20241022', messages: [{ role: 'user', content: $json.prompt }], max_tokens: 4096 }) }}"
+      },
+      "id": "llm-generate",
+      "name": "LLM Generate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const llmResponse = $json.choices?.[0]?.message?.content || 'Error generating code';\nconst userRequest = $('Merge Context').first().json.userRequest;\n\nreturn {\n  request: userRequest,\n  response: llmResponse,\n  model: 'claude-3-5-sonnet-20241022',\n  method: 'ontology_plus_rag',\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1450, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Generate Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Embedding": {
+      "main": [
+        [
+          {
+            "node": "Qdrant Search",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Neo4j Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant Search": {
+      "main": [
+        [
+          {
+            "node": "Merge Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Neo4j Context": {
+      "main": [
+        [
+          {
+            "node": "Merge Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Context": {
+      "main": [
+        [
+          {
+            "node": "LLM Generate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Generate": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Cafe24_CRM_Prototype"
+    }
+  ]
+}

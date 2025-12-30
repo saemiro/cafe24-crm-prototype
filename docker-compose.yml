@@ -1,0 +1,40 @@
+# Cafe24 CRM Prototype - Docker Compose
+# This runs the prototype dashboard and embedder services
+# Main AI services (n8n, Qdrant, Neo4j, LiteLLM) are already running on i3
+
+version: '3.8'
+
+services:
+  # Dashboard Frontend
+  dashboard:
+    build:
+      context: ./dashboard
+      dockerfile: Dockerfile
+    container_name: cafe24-crm-dashboard
+    restart: unless-stopped
+    ports:
+      - "8088:80"
+    labels:
+      - "com.docker.compose.project=cafe24-crm-prototype"
+      - "description=Cafe24 CRM Prototype Dashboard"
+
+  # Document Embedder (for manual embedding runs)
+  embedder:
+    build:
+      context: .
+      dockerfile: Dockerfile.embedder
+    container_name: cafe24-crm-embedder
+    restart: "no"
+    environment:
+      - QDRANT_URL=https://qdrant.saemiro.com
+      - CF_ACCESS_CLIENT_ID=33fc2fac58bf5237d16ac159db51b46b.access
+      - CF_ACCESS_CLIENT_SECRET=${CF_ACCESS_CLIENT_SECRET}
+    volumes:
+      - ./data:/app/data
+    labels:
+      - "com.docker.compose.project=cafe24-crm-prototype"
+      - "description=Cafe24 API Document Embedder"
+
+networks:
+  default:
+    name: cafe24-crm-network

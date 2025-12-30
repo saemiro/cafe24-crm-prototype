@@ -1,0 +1,214 @@
+{
+  "name": "Cafe24_CRM_B_RAG_Only",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cafe24-crm/rag",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://litellm:4000/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.LITELLM_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'text-embedding-3-small', input: $json.body.request }) }}"
+      },
+      "id": "generate-embedding",
+      "name": "Generate Embedding",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://qdrant.saemiro.com/collections/cafe24_api_docs/points/search",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ vector: $json.data[0].embedding, limit: 5, with_payload: true }) }}"
+      },
+      "id": "qdrant-search",
+      "name": "Qdrant Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const qdrantResults = $json.result || [];\nconst userRequest = $('Webhook').first().json.body.request;\n\n// Build RAG context only\nconst ragContext = qdrantResults\n  .map(r => r.payload?.text || '')\n  .join('\\n\\n---\\n\\n');\n\nconst prompt = `당신은 Cafe24 CRM 전문가입니다.\n\n## 관련 API 문서:\n${ragContext}\n\n## 요청:\n${userRequest}\n\n## 지시사항:\n1. 위 API 문서를 참고하여 코드를 작성하세요\n2. 에러 처리를 포함하세요\n3. 타입 힌트를 사용하세요\n4. 한국어로 주석을 작성하세요`;\n\nreturn {\n  userRequest,\n  ragContext,\n  prompt\n};"
+      },
+      "id": "build-prompt",
+      "name": "Build Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://litellm:4000/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.LITELLM_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-3-5-sonnet-20241022', messages: [{ role: 'user', content: $json.prompt }], max_tokens: 4096 }) }}"
+      },
+      "id": "llm-rag",
+      "name": "LLM with RAG",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const llmResponse = $json.choices?.[0]?.message?.content || 'Error generating code';\nconst userRequest = $('Build Prompt').first().json.userRequest;\n\nreturn {\n  request: userRequest,\n  response: llmResponse,\n  model: 'claude-3-5-sonnet-20241022',\n  method: 'rag_only',\n  context_type: 'qdrant_api_docs',\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1450, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Generate Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Embedding": {
+      "main": [
+        [
+          {
+            "node": "Qdrant Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant Search": {
+      "main": [
+        [
+          {
+            "node": "Build Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Prompt": {
+      "main": [
+        [
+          {
+            "node": "LLM with RAG",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM with RAG": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Cafe24_CRM_Prototype"
+    },
+    {
+      "name": "AB_Test"
+    }
+  ]
+}

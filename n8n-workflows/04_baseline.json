@@ -1,0 +1,113 @@
+{
+  "name": "Cafe24_CRM_A_Baseline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cafe24-crm/baseline",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://litellm:4000/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.LITELLM_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-3-5-sonnet-20241022', messages: [{ role: 'system', content: '당신은 E-commerce CRM 코드 생성 전문가입니다. Cafe24 플랫폼용 코드를 작성해주세요.' }, { role: 'user', content: $json.body.request }], max_tokens: 4096 }) }}"
+      },
+      "id": "llm-baseline",
+      "name": "LLM Baseline",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const llmResponse = $json.choices?.[0]?.message?.content || 'Error generating code';\nconst userRequest = $('Webhook').first().json.body.request;\n\nreturn {\n  request: userRequest,\n  response: llmResponse,\n  model: 'claude-3-5-sonnet-20241022',\n  method: 'baseline',\n  context_type: 'none',\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1000, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "LLM Baseline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Baseline": {
+      "main": [
+        [
+          {
+            "node": "Format Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Cafe24_CRM_Prototype"
+    },
+    {
+      "name": "AB_Test"
+    }
+  ]
+}

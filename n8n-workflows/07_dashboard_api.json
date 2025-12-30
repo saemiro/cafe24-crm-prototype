@@ -1,0 +1,421 @@
+{
+  "name": "Cafe24_CRM_Dashboard_API",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "=GET",
+        "path": "cafe24-crm/dashboard",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "dashboard-get",
+      "name": "GET Dashboard",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 200]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cafe24-crm/compare",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "compare-post",
+      "name": "POST Compare",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 400]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "cafe24-crm/insights",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "insights-get",
+      "name": "GET Insights",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 600]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://neo4j.saemiro.com/db/neo4j/tx/commit",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Basic {{ Buffer.from($env.NEO4J_USER + ':' + $env.NEO4J_PASSWORD).toString('base64') }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ statements: [{ statement: 'MATCH (n) WHERE n:CRM_Entity OR n:CRM_Customer OR n:CRM_Order OR n:CRM_Product OR n:CRM_Campaign OR n:CRM_Segment RETURN labels(n)[0] as type, count(n) as count' }, { statement: 'MATCH ()-[r]->() WHERE type(r) STARTS WITH \"CRM\" OR type(r) IN [\"PLACES\", \"CONTAINS\", \"TARGETS\", \"INCLUDES\"] RETURN type(r) as rel_type, count(r) as count' }] }) }}"
+      },
+      "id": "neo4j-stats",
+      "name": "Neo4j Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://qdrant.saemiro.com/collections",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            }
+          ]
+        }
+      },
+      "id": "qdrant-stats",
+      "name": "Qdrant Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "const neo4jResults = $('Neo4j Stats').first().json.results || [];\nconst qdrantResults = $('Qdrant Stats').first().json.result?.collections || [];\n\n// Parse Neo4j node counts\nconst nodeStats = {};\nif (neo4jResults[0]?.data) {\n  neo4jResults[0].data.forEach(d => {\n    nodeStats[d.row[0]] = d.row[1];\n  });\n}\n\n// Parse Neo4j relationship counts\nconst relStats = {};\nif (neo4jResults[1]?.data) {\n  neo4jResults[1].data.forEach(d => {\n    relStats[d.row[0]] = d.row[1];\n  });\n}\n\n// Parse Qdrant collections\nconst collections = qdrantResults\n  .filter(c => c.name.startsWith('cafe24'))\n  .map(c => ({\n    name: c.name,\n    points_count: c.points_count || 0\n  }));\n\nreturn {\n  ontology: {\n    nodes: nodeStats,\n    relationships: relStats,\n    total_nodes: Object.values(nodeStats).reduce((a, b) => a + b, 0),\n    total_relationships: Object.values(relStats).reduce((a, b) => a + b, 0)\n  },\n  vector_store: {\n    collections: collections,\n    total_vectors: collections.reduce((a, c) => a + c.points_count, 0)\n  },\n  status: 'healthy',\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "build-dashboard",
+      "name": "Build Dashboard",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "respond-dashboard",
+      "name": "Respond Dashboard",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1000, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const request = $json.body.request;\nconst endpoints = {\n  baseline: 'http://localhost:5678/webhook/cafe24-crm/baseline',\n  rag: 'http://localhost:5678/webhook/cafe24-crm/rag',\n  ontology: 'http://localhost:5678/webhook/cafe24-crm/generate'\n};\n\nreturn {\n  request,\n  endpoints\n};"
+      },
+      "id": "prepare-compare",
+      "name": "Prepare Compare",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [500, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.endpoints.baseline }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ request: $json.request }) }}"
+      },
+      "id": "call-baseline",
+      "name": "Call Baseline",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Prepare Compare').first().json.endpoints.rag }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ request: $('Prepare Compare').first().json.request }) }}"
+      },
+      "id": "call-rag",
+      "name": "Call RAG",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [750, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Prepare Compare').first().json.endpoints.ontology }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ request: $('Prepare Compare').first().json.request }) }}"
+      },
+      "id": "call-ontology",
+      "name": "Call Ontology",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [750, 500]
+    },
+    {
+      "parameters": {
+        "jsCode": "const baseline = $('Call Baseline').first().json;\nconst rag = $('Call RAG').first().json;\nconst ontology = $('Call Ontology').first().json;\nconst request = $('Prepare Compare').first().json.request;\n\nreturn {\n  request,\n  comparison: {\n    A_baseline: {\n      method: 'baseline',\n      response: baseline.response,\n      context_type: 'none'\n    },\n    B_rag: {\n      method: 'rag_only',\n      response: rag.response,\n      context_type: 'qdrant_api_docs'\n    },\n    C_ontology: {\n      method: 'ontology_plus_rag',\n      response: ontology.response,\n      context_type: 'neo4j + qdrant'\n    }\n  },\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "merge-results",
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "respond-compare",
+      "name": "Respond Compare",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://qdrant.saemiro.com/collections/cafe24_insights/points/scroll",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ limit: 10, with_payload: true }) }}"
+      },
+      "id": "get-insights",
+      "name": "Get Insights",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "const points = $json.result?.points || [];\n\nconst insights = points.map(p => ({\n  id: p.id,\n  type: p.payload?.type || 'unknown',\n  date: p.payload?.date || null,\n  categories: p.payload?.categories || [],\n  preview: (p.payload?.report || '').substring(0, 200) + '...'\n}));\n\nreturn {\n  insights,\n  total: insights.length,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "format-insights",
+      "name": "Format Insights",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 600]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "respond-insights",
+      "name": "Respond Insights",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1000, 600]
+    }
+  ],
+  "connections": {
+    "GET Dashboard": {
+      "main": [
+        [
+          {
+            "node": "Neo4j Stats",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Qdrant Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Neo4j Stats": {
+      "main": [
+        [
+          {
+            "node": "Build Dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Qdrant Stats": {
+      "main": [
+        [
+          {
+            "node": "Build Dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Dashboard": {
+      "main": [
+        [
+          {
+            "node": "Respond Dashboard",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST Compare": {
+      "main": [
+        [
+          {
+            "node": "Prepare Compare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Compare": {
+      "main": [
+        [
+          {
+            "node": "Call Baseline",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Call RAG",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Call Ontology",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Baseline": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call RAG": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Ontology": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Results": {
+      "main": [
+        [
+          {
+            "node": "Respond Compare",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET Insights": {
+      "main": [
+        [
+          {
+            "node": "Get Insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Insights": {
+      "main": [
+        [
+          {
+            "node": "Format Insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Insights": {
+      "main": [
+        [
+          {
+            "node": "Respond Insights",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Cafe24_CRM_Prototype"
+    },
+    {
+      "name": "Dashboard"
+    }
+  ]
+}

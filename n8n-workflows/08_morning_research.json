@@ -1,0 +1,280 @@
+{
+  "name": "Cafe24_CRM_Morning_Research",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Morning 9AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Define research topics for morning scan\nreturn [\n  {\n    category: 'competitor',\n    query: 'Shopify 신기능 2025',\n    source: 'shopify_blog'\n  },\n  {\n    category: 'competitor', \n    query: 'WooCommerce 업데이트 2025',\n    source: 'woocommerce_news'\n  },\n  {\n    category: 'trend',\n    query: 'E-commerce CRM AI 트렌드 2025',\n    source: 'industry_news'\n  },\n  {\n    category: 'cafe24',\n    query: 'Cafe24 신규 API 업데이트',\n    source: 'cafe24_developer'\n  },\n  {\n    category: 'technology',\n    query: 'LLM RAG 최신 기법',\n    source: 'tech_blog'\n  }\n];"
+      },
+      "id": "define-topics",
+      "name": "Define Research Topics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-topics",
+      "name": "Split Topics",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://litellm:4000/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.LITELLM_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'claude-3-5-sonnet-20241022', messages: [{ role: 'system', content: '당신은 E-commerce 시장 조사 전문가입니다. 최신 트렌드와 경쟁사 동향을 분석합니다. 한국어로 응답하세요.' }, { role: 'user', content: '다음 주제에 대해 최근 동향을 조사하고 Cafe24 CRM에 적용할 수 있는 인사이트를 3가지 제시해주세요: ' + $json.query }], max_tokens: 1024 }) }}"
+      },
+      "id": "research-topic",
+      "name": "Research Topic",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const topic = $('Split Topics').first().json;\nconst research = $json.choices?.[0]?.message?.content || 'No response';\n\nreturn {\n  category: topic.category,\n  query: topic.query,\n  source: topic.source,\n  insights: research,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "format-insight",
+      "name": "Format Insight",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "id": "aggregate-insights",
+      "name": "Aggregate Insights",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const insights = $json.data || [];\nconst date = new Date().toISOString().split('T')[0];\n\n// Build summary\nlet summary = `# Morning Research Report - ${date}\\n\\n`;\n\ninsights.forEach((item, idx) => {\n  summary += `## ${idx + 1}. ${item.category.toUpperCase()}: ${item.query}\\n\\n`;\n  summary += `${item.insights}\\n\\n---\\n\\n`;\n});\n\nreturn {\n  date,\n  report: summary,\n  insights_count: insights.length,\n  categories: [...new Set(insights.map(i => i.category))]\n};"
+      },
+      "id": "build-report",
+      "name": "Build Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: '🌅 *Morning Research Report - ' + $json.date + '*\\n\\n' + $json.insights_count + '개의 인사이트가 발견되었습니다.\\n카테고리: ' + $json.categories.join(', ') + '\\n\\n자세한 내용은 n8n 실행 결과를 확인하세요.' }) }}"
+      },
+      "id": "slack-notify",
+      "name": "Slack Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://litellm:4000/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.LITELLM_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'text-embedding-3-small', input: $json.report }) }}"
+      },
+      "id": "embed-report",
+      "name": "Embed Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1650, 400]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "https://qdrant.saemiro.com/collections/cafe24_insights/points",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ points: [{ id: Date.now(), vector: $json.data[0].embedding, payload: { type: 'morning_research', date: $('Build Report').first().json.date, report: $('Build Report').first().json.report, categories: $('Build Report').first().json.categories } }] }) }}"
+      },
+      "id": "store-qdrant",
+      "name": "Store in Qdrant",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1850, 400]
+    }
+  ],
+  "connections": {
+    "Morning 9AM": {
+      "main": [
+        [
+          {
+            "node": "Define Research Topics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Define Research Topics": {
+      "main": [
+        [
+          {
+            "node": "Split Topics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Topics": {
+      "main": [
+        [
+          {
+            "node": "Research Topic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Research Topic": {
+      "main": [
+        [
+          {
+            "node": "Format Insight",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Insight": {
+      "main": [
+        [
+          {
+            "node": "Split Topics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Insights": {
+      "main": [
+        [
+          {
+            "node": "Build Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Report": {
+      "main": [
+        [
+          {
+            "node": "Slack Notify",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Embed Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embed Report": {
+      "main": [
+        [
+          {
+            "node": "Store in Qdrant",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Cafe24_CRM_Prototype"
+    },
+    {
+      "name": "Auto_Discovery"
+    }
+  ]
+}

@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cafe24 CRM Prototype - AI Code Generator</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <style>
+        .code-block { max-height: 400px; overflow-y: auto; }
+        .loading { animation: pulse 1.5s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        .method-badge { font-size: 0.65rem; }
+    </style>
+</head>
+<body class="bg-gray-900 text-white min-h-screen">
+    <!-- Header -->
+    <header class="bg-gradient-to-r from-purple-800 to-indigo-900 py-6 shadow-lg">
+        <div class="container mx-auto px-4">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-2xl font-bold">Cafe24 CRM Prototype</h1>
+                    <p class="text-purple-200 text-sm">AI-Powered Code Generation Demo</p>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <span id="status-indicator" class="flex items-center">
+                        <span class="w-2 h-2 bg-green-400 rounded-full mr-2"></span>
+                        <span class="text-sm">System Ready</span>
+                    </span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="container mx-auto px-4 py-8">
+        <!-- Stats Dashboard -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <div class="text-gray-400 text-sm">Ontology Nodes</div>
+                <div class="text-2xl font-bold text-blue-400" id="ontology-nodes">-</div>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <div class="text-gray-400 text-sm">Relationships</div>
+                <div class="text-2xl font-bold text-green-400" id="ontology-rels">-</div>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <div class="text-gray-400 text-sm">Vector Documents</div>
+                <div class="text-2xl font-bold text-yellow-400" id="vector-docs">-</div>
+            </div>
+            <div class="bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <div class="text-gray-400 text-sm">Insights Collected</div>
+                <div class="text-2xl font-bold text-purple-400" id="insights-count">-</div>
+            </div>
+        </div>
+
+        <!-- Input Section -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-8 border border-gray-700">
+            <h2 class="text-xl font-semibold mb-4">코드 생성 요청</h2>
+            <div class="flex flex-col md:flex-row gap-4">
+                <textarea
+                    id="request-input"
+                    class="flex-1 bg-gray-700 border border-gray-600 rounded-lg p-4 text-white resize-none focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    rows="3"
+                    placeholder="예: Cafe24 API를 사용해서 고객 목록을 조회하는 Python 함수를 작성해주세요"
+                ></textarea>
+                <div class="flex flex-col gap-2">
+                    <button
+                        id="compare-btn"
+                        class="bg-purple-600 hover:bg-purple-700 px-6 py-3 rounded-lg font-semibold transition"
+                        onclick="runComparison()"
+                    >
+                        🔬 A/B/C 비교
+                    </button>
+                    <button
+                        id="generate-btn"
+                        class="bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-lg font-semibold transition"
+                        onclick="generateCode()"
+                    >
+                        ⚡ 최적 생성
+                    </button>
+                </div>
+            </div>
+            <div class="mt-3 text-sm text-gray-400">
+                <span class="font-medium">예시 요청:</span>
+                <button class="ml-2 text-purple-400 hover:underline" onclick="setExample(1)">고객 조회 API</button>
+                <button class="ml-2 text-purple-400 hover:underline" onclick="setExample(2)">주문 생성 함수</button>
+                <button class="ml-2 text-purple-400 hover:underline" onclick="setExample(3)">상품 재고 확인</button>
+            </div>
+        </div>
+
+        <!-- A/B/C Comparison Results -->
+        <div id="comparison-section" class="hidden">
+            <h2 class="text-xl font-semibold mb-4">📊 A/B/C 비교 결과</h2>
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <!-- Method A: Baseline -->
+                <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+                    <div class="bg-red-900/50 px-4 py-3 border-b border-gray-700">
+                        <div class="flex items-center justify-between">
+                            <span class="font-semibold">A. Baseline</span>
+                            <span class="method-badge bg-red-700 px-2 py-1 rounded">LLM Only</span>
+                        </div>
+                        <div class="text-xs text-gray-400 mt-1">순수 LLM 응답 (컨텍스트 없음)</div>
+                    </div>
+                    <div class="p-4 code-block">
+                        <pre><code id="result-baseline" class="language-python text-sm">// 결과가 여기에 표시됩니다</code></pre>
+                    </div>
+                </div>
+
+                <!-- Method B: RAG Only -->
+                <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+                    <div class="bg-yellow-900/50 px-4 py-3 border-b border-gray-700">
+                        <div class="flex items-center justify-between">
+                            <span class="font-semibold">B. RAG Only</span>
+                            <span class="method-badge bg-yellow-700 px-2 py-1 rounded">Qdrant</span>
+                        </div>
+                        <div class="text-xs text-gray-400 mt-1">벡터 검색 기반 (API 문서)</div>
+                    </div>
+                    <div class="p-4 code-block">
+                        <pre><code id="result-rag" class="language-python text-sm">// 결과가 여기에 표시됩니다</code></pre>
+                    </div>
+                </div>
+
+                <!-- Method C: Ontology + RAG -->
+                <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+                    <div class="bg-green-900/50 px-4 py-3 border-b border-gray-700">
+                        <div class="flex items-center justify-between">
+                            <span class="font-semibold">C. Ontology + RAG</span>
+                            <span class="method-badge bg-green-700 px-2 py-1 rounded">Neo4j + Qdrant</span>
+                        </div>
+                        <div class="text-xs text-gray-400 mt-1">온톨로지 + 벡터 융합</div>
+                    </div>
+                    <div class="p-4 code-block">
+                        <pre><code id="result-ontology" class="language-python text-sm">// 결과가 여기에 표시됩니다</code></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Feedback Section -->
+            <div class="mt-6 bg-gray-800 rounded-lg p-4 border border-gray-700">
+                <h3 class="font-semibold mb-3">📝 피드백 제공</h3>
+                <div class="flex flex-wrap gap-2">
+                    <button onclick="sendFeedback('A', 'positive')" class="bg-gray-700 hover:bg-green-700 px-4 py-2 rounded">👍 A가 좋음</button>
+                    <button onclick="sendFeedback('B', 'positive')" class="bg-gray-700 hover:bg-green-700 px-4 py-2 rounded">👍 B가 좋음</button>
+                    <button onclick="sendFeedback('C', 'positive')" class="bg-gray-700 hover:bg-green-700 px-4 py-2 rounded">👍 C가 좋음</button>
+                    <button onclick="sendFeedback('all', 'negative')" class="bg-gray-700 hover:bg-red-700 px-4 py-2 rounded">👎 모두 부적합</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Single Result Section -->
+        <div id="single-result-section" class="hidden">
+            <h2 class="text-xl font-semibold mb-4">⚡ 생성 결과 (Ontology + RAG)</h2>
+            <div class="bg-gray-800 rounded-lg border border-green-700 overflow-hidden">
+                <div class="bg-green-900/50 px-4 py-3 border-b border-gray-700">
+                    <span class="font-semibold">최적화된 코드</span>
+                </div>
+                <div class="p-4 code-block">
+                    <pre><code id="result-single" class="language-python text-sm">// 결과가 여기에 표시됩니다</code></pre>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-gray-800 py-4 mt-8 border-t border-gray-700">
+        <div class="container mx-auto px-4 text-center text-gray-400 text-sm">
+            <p>Cafe24 CRM Prototype © 2025 SAEMIRO</p>
+            <p class="mt-1">Demo/Presentation Only - Not for Production Use</p>
+        </div>
+    </footer>
+
+    <script>
+        // API Configuration
+        const API_BASE = 'https://n8n.saemiro.com/webhook';
+        const CF_ACCESS = {
+            clientId: '33fc2fac58bf5237d16ac159db51b46b.access',
+            clientSecret: '7251ba3d0093523b81898e1df292ba8531b48db96d981224c8612fb1f3c1183c'
+        };
+
+        // Example queries
+        const examples = {
+            1: 'Cafe24 API를 사용해서 고객 목록을 조회하는 Python 함수를 작성해주세요. 페이지네이션을 지원해야 합니다.',
+            2: 'Cafe24 주문 생성 API를 호출하는 함수를 작성해주세요. 에러 처리와 재시도 로직을 포함해야 합니다.',
+            3: '상품 재고를 확인하고 재고가 부족하면 Slack으로 알림을 보내는 함수를 작성해주세요.'
+        };
+
+        function setExample(num) {
+            document.getElementById('request-input').value = examples[num];
+        }
+
+        // Load dashboard stats
+        async function loadStats() {
+            try {
+                const response = await fetch(`${API_BASE}/cafe24-crm/dashboard`, {
+                    headers: {
+                        'CF-Access-Client-Id': CF_ACCESS.clientId,
+                        'CF-Access-Client-Secret': CF_ACCESS.clientSecret
+                    }
+                });
+                const data = await response.json();
+
+                document.getElementById('ontology-nodes').textContent = data.ontology?.total_nodes || 0;
+                document.getElementById('ontology-rels').textContent = data.ontology?.total_relationships || 0;
+                document.getElementById('vector-docs').textContent = data.vector_store?.total_vectors || 0;
+                document.getElementById('insights-count').textContent = '0'; // Will be updated when insights API is ready
+            } catch (error) {
+                console.error('Failed to load stats:', error);
+            }
+        }
+
+        // Run A/B/C comparison
+        async function runComparison() {
+            const request = document.getElementById('request-input').value;
+            if (!request) {
+                alert('요청을 입력해주세요');
+                return;
+            }
+
+            // Show comparison section, hide single result
+            document.getElementById('comparison-section').classList.remove('hidden');
+            document.getElementById('single-result-section').classList.add('hidden');
+
+            // Set loading state
+            ['baseline', 'rag', 'ontology'].forEach(id => {
+                document.getElementById(`result-${id}`).textContent = '로딩 중...';
+                document.getElementById(`result-${id}`).classList.add('loading');
+            });
+
+            try {
+                const response = await fetch(`${API_BASE}/cafe24-crm/compare`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'CF-Access-Client-Id': CF_ACCESS.clientId,
+                        'CF-Access-Client-Secret': CF_ACCESS.clientSecret
+                    },
+                    body: JSON.stringify({ request })
+                });
+                const data = await response.json();
+
+                // Update results
+                document.getElementById('result-baseline').textContent = data.comparison?.A_baseline?.response || 'Error';
+                document.getElementById('result-rag').textContent = data.comparison?.B_rag?.response || 'Error';
+                document.getElementById('result-ontology').textContent = data.comparison?.C_ontology?.response || 'Error';
+
+                // Apply syntax highlighting
+                document.querySelectorAll('pre code').forEach(block => {
+                    hljs.highlightElement(block);
+                });
+            } catch (error) {
+                console.error('Comparison failed:', error);
+                alert('비교 요청에 실패했습니다: ' + error.message);
+            } finally {
+                ['baseline', 'rag', 'ontology'].forEach(id => {
+                    document.getElementById(`result-${id}`).classList.remove('loading');
+                });
+            }
+        }
+
+        // Generate code (best method)
+        async function generateCode() {
+            const request = document.getElementById('request-input').value;
+            if (!request) {
+                alert('요청을 입력해주세요');
+                return;
+            }
+
+            // Show single result section, hide comparison
+            document.getElementById('single-result-section').classList.remove('hidden');
+            document.getElementById('comparison-section').classList.add('hidden');
+
+            // Set loading state
+            document.getElementById('result-single').textContent = '로딩 중...';
+            document.getElementById('result-single').classList.add('loading');
+
+            try {
+                const response = await fetch(`${API_BASE}/cafe24-crm/generate`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'CF-Access-Client-Id': CF_ACCESS.clientId,
+                        'CF-Access-Client-Secret': CF_ACCESS.clientSecret
+                    },
+                    body: JSON.stringify({ request })
+                });
+                const data = await response.json();
+
+                document.getElementById('result-single').textContent = data.response || 'Error';
+                hljs.highlightElement(document.getElementById('result-single'));
+            } catch (error) {
+                console.error('Generation failed:', error);
+                alert('생성 요청에 실패했습니다: ' + error.message);
+            } finally {
+                document.getElementById('result-single').classList.remove('loading');
+            }
+        }
+
+        // Send feedback
+        async function sendFeedback(method, type) {
+            try {
+                await fetch(`${API_BASE}/cafe24-crm/feedback`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'CF-Access-Client-Id': CF_ACCESS.clientId,
+                        'CF-Access-Client-Secret': CF_ACCESS.clientSecret
+                    },
+                    body: JSON.stringify({
+                        pattern_id: 'demo_' + Date.now(),
+                        feedback_type: type,
+                        method: method,
+                        request: document.getElementById('request-input').value
+                    })
+                });
+                alert('피드백이 전송되었습니다. 감사합니다!');
+            } catch (error) {
+                console.error('Feedback failed:', error);
+            }
+        }
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStats();
+        });
+    </script>
+</body>
+</html>

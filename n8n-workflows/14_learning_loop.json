@@ -1,0 +1,326 @@
+{
+  "name": "Cafe24_CRM_Learning_Loop",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cafe24-crm/feedback",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "feedback-webhook",
+      "name": "Feedback Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "positive",
+              "leftValue": "={{ $json.body.feedback_type }}",
+              "rightValue": "positive",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "negative",
+              "leftValue": "={{ $json.body.feedback_type }}",
+              "rightValue": "negative",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "correction",
+              "leftValue": "={{ $json.body.feedback_type }}",
+              "rightValue": "correction",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        }
+      },
+      "id": "feedback-router",
+      "name": "Feedback Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Positive feedback - reinforce pattern\nconst feedback = $('Feedback Webhook').first().json.body;\n\nreturn {\n  action: 'reinforce',\n  pattern_id: feedback.pattern_id,\n  request: feedback.request,\n  response: feedback.response,\n  score_delta: 0.1,\n  reason: feedback.reason || 'User approved',\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "process-positive",
+      "name": "Process Positive",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Negative feedback - weaken pattern\nconst feedback = $('Feedback Webhook').first().json.body;\n\nreturn {\n  action: 'weaken',\n  pattern_id: feedback.pattern_id,\n  request: feedback.request,\n  response: feedback.response,\n  score_delta: -0.2,\n  reason: feedback.reason || 'User rejected',\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "process-negative",
+      "name": "Process Negative",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Correction feedback - update pattern with new data\nconst feedback = $('Feedback Webhook').first().json.body;\n\nreturn {\n  action: 'update',\n  pattern_id: feedback.pattern_id,\n  original_request: feedback.request,\n  original_response: feedback.response,\n  corrected_response: feedback.correction,\n  reason: feedback.reason || 'User corrected',\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "process-correction",
+      "name": "Process Correction",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://neo4j.saemiro.com/db/neo4j/tx/commit",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Authorization",
+              "value": "Basic {{ Buffer.from($env.NEO4J_USER + ':' + $env.NEO4J_PASSWORD).toString('base64') }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ statements: [{ statement: 'MERGE (f:CRM_Feedback {pattern_id: $pattern_id}) SET f.action = $action, f.score_delta = $score_delta, f.reason = $reason, f.timestamp = $timestamp, f.total_score = COALESCE(f.total_score, 0) + $score_delta', parameters: { pattern_id: $json.pattern_id || 'unknown', action: $json.action, score_delta: $json.score_delta || 0, reason: $json.reason, timestamp: $json.timestamp } }] }) }}"
+      },
+      "id": "store-feedback",
+      "name": "Store Feedback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1000, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const action = $('Process Positive').first()?.json?.action || \n              $('Process Negative').first()?.json?.action || \n              $('Process Correction').first()?.json?.action || 'unknown';\n\nconst feedback = $('Process Positive').first()?.json || \n                 $('Process Negative').first()?.json || \n                 $('Process Correction').first()?.json || {};\n\n// Check if fine-tuning should be triggered\nconst shouldFineTune = feedback.score_delta && Math.abs(feedback.score_delta) > 0.15;\n\nreturn {\n  status: 'processed',\n  action: action,\n  pattern_id: feedback.pattern_id,\n  score_delta: feedback.score_delta,\n  trigger_fine_tuning: shouldFineTune,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "check-finetune",
+      "name": "Check Fine-tune",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "should-finetune",
+              "leftValue": "={{ $json.trigger_fine_tuning }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "finetune-check",
+      "name": "Fine-tune Check",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1400, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SLACK_WEBHOOK }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ text: '🔄 *Learning Loop Triggered*\\n\\nPattern: ' + $json.pattern_id + '\\nAction: ' + $json.action + '\\nScore Delta: ' + $json.score_delta + '\\n\\n⚠️ Fine-tuning queue updated. Consider running fine-tuning workflow.' }) }}"
+      },
+      "id": "notify-finetune",
+      "name": "Notify Fine-tune",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1600, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "respond-webhook",
+      "name": "Respond Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1600, 400]
+    }
+  ],
+  "connections": {
+    "Feedback Webhook": {
+      "main": [
+        [
+          {
+            "node": "Feedback Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Feedback Router": {
+      "main": [
+        [
+          {
+            "node": "Process Positive",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Negative",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Process Correction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Positive": {
+      "main": [
+        [
+          {
+            "node": "Store Feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Negative": {
+      "main": [
+        [
+          {
+            "node": "Store Feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Correction": {
+      "main": [
+        [
+          {
+            "node": "Store Feedback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store Feedback": {
+      "main": [
+        [
+          {
+            "node": "Check Fine-tune",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Fine-tune": {
+      "main": [
+        [
+          {
+            "node": "Fine-tune Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fine-tune Check": {
+      "main": [
+        [
+          {
+            "node": "Notify Fine-tune",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Fine-tune": {
+      "main": [
+        [
+          {
+            "node": "Respond Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "Cafe24_CRM_Prototype"
+    },
+    {
+      "name": "Emergent_Intelligence"
+    }
+  ]
+}
