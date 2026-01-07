@@ -1,0 +1,51 @@
+name: Deploy Cafe24 CRM Prototype
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'docker-compose.prod.yml'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Linux, X64, i3]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Create .env file
+        run: |
+          cat > .env << 'EOF'
+          DB_HOST=${{ secrets.DB_HOST }}
+          DB_PORT=3306
+          DB_NAME=cafe24
+          DB_USER=${{ secrets.DB_USER }}
+          DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+          NEO4J_URI=${{ secrets.NEO4J_URI }}
+          NEO4J_USER=${{ secrets.NEO4J_USER }}
+          NEO4J_PASSWORD=${{ secrets.NEO4J_PASSWORD }}
+          CAFE24_CLIENT_ID=${{ secrets.CAFE24_CLIENT_ID }}
+          CAFE24_CLIENT_SECRET=${{ secrets.CAFE24_CLIENT_SECRET }}
+          LITELLM_API_KEY=${{ secrets.LITELLM_API_KEY }}
+          EOF
+
+      - name: Build and deploy with Docker Compose
+        run: |
+          docker compose -f docker-compose.prod.yml build
+          docker compose -f docker-compose.prod.yml up -d --force-recreate
+
+      - name: Health check
+        run: |
+          echo "Waiting for services to start..."
+          sleep 30
+          curl -f http://localhost:8089/api/health || echo "Backend health check failed"
+          curl -f http://localhost:3005/health || echo "Frontend health check failed"
+
+      - name: Cleanup old images
+        run: |
+          docker image prune -f || true

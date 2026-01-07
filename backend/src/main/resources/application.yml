@@ -1,0 +1,81 @@
+spring:
+  application:
+    name: cafe24-crm-api
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:cafe24}?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Seoul
+    username: ${DB_USER:admin}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+    show-sql: false
+
+  neo4j:
+    uri: ${NEO4J_URI:bolt://localhost:7687}
+    authentication:
+      username: ${NEO4J_USER:neo4j}
+      password: ${NEO4J_PASSWORD:}
+
+server:
+  port: ${SERVER_PORT:8089}
+  servlet:
+    context-path: /api
+
+# External Services
+external:
+  cafe24-auth:
+    base-url: ${CAFE24_AUTH_URL:https://cafe24-auth.saemiro.com}
+  litellm:
+    base-url: ${LITELLM_URL:https://llm.saemiro.com}
+    api-key: ${LITELLM_API_KEY:}
+  cf-access:
+    client-id: ${CF_ACCESS_CLIENT_ID:}
+    client-secret: ${CF_ACCESS_CLIENT_SECRET:}
+  qdrant:
+    host: ${QDRANT_HOST:qdrant.saemiro.com}
+    port: ${QDRANT_PORT:6334}
+    use-tls: ${QDRANT_USE_TLS:true}
+  n8n:
+    base-url: ${N8N_URL:https://n8n.saemiro.com}
+    webhook-prefix: /webhook
+
+# Actuator
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+
+# Logging
+logging:
+  level:
+    root: INFO
+    com.cafe24.crm: DEBUG
+    org.springframework.web: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# OpenAPI
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+
+# Cafe24 Direct OAuth
+cafe24:
+  client-id: ${CAFE24_CLIENT_ID:}
+  client-secret: ${CAFE24_CLIENT_SECRET:}
+  callback-url: ${CAFE24_CALLBACK_URL:https://crm-api.saemiro.com/api/auth/cafe24/callback}
+  frontend-url: ${CAFE24_FRONTEND_URL:https://crm.saemiro.com}
