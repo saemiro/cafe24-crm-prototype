@@ -44,11 +44,11 @@ cafe24-crm-prototype/
 ## Development Phases
 
 - [x] Phase 0: Environment setup & infrastructure testing
-- [ ] Phase 1: Domain knowledge collection (Cafe24 API docs → Qdrant)
-- [ ] Phase 2: Ontology construction (domain.yaml → Neo4j)
-- [ ] Phase 2.5: Fine-tuning experiment (Together AI Llama)
-- [ ] Phase 3: Prototype implementation (Spring Boot + React)
-- [ ] Phase 4: Presentation materials
+- [x] Phase 1: Domain knowledge collection (Cafe24 API docs → Qdrant) ✅ 37 points
+- [x] Phase 2: Ontology construction (domain.yaml → Neo4j) ✅ 131 nodes
+- [x] Phase 2.5: Fine-tuning experiment (Together AI Llama) ✅ Fine-tuned model
+- [x] Phase 3: Prototype implementation (Spring Boot + React) ✅ Full CRM features
+- [ ] Phase 4: Presentation materials (In Progress)
 
 ## Key Demonstrations
 

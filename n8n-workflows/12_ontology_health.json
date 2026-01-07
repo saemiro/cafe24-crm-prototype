@@ -7,13 +7,13 @@
           "interval": [
             {
               "field": "cronExpression",
-              "expression": "0 */6 * * *"
+              "expression": "30 10,14,17 * * *"
             }
           ]
         }
       },
       "id": "cron-trigger",
-      "name": "Every 6 Hours",
+      "name": "Health 10:30AM 2:30PM 5:30PM",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [250, 300]
@@ -21,25 +21,17 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://neo4j.saemiro.com/db/neo4j/tx/commit",
+        "url": "http://neo4j:7474/db/neo4j/tx/commit",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "CF-Access-Client-Id",
-              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
-            },
-            {
-              "name": "CF-Access-Client-Secret",
-              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
-            },
             {
               "name": "Content-Type",
               "value": "application/json"
             },
             {
               "name": "Authorization",
-              "value": "Basic {{ Buffer.from($env.NEO4J_USER + ':' + $env.NEO4J_PASSWORD).toString('base64') }}"
+              "value": "Basic bmVvNGo6b250b2xvZ3kyMDI1"
             }
           ]
         },
@@ -84,13 +76,13 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://litellm:4000/chat/completions",
+        "url": "http://claude-wrapper:4001/v1/chat/completions",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer {{ $env.LITELLM_API_KEY }}"
+              "value": "Bearer sk-litellm-master-key"
             },
             {
               "name": "Content-Type",
@@ -100,7 +92,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: 'claude-3-5-sonnet-20241022', messages: [{ role: 'system', content: '당신은 그래프 데이터베이스 전문가입니다. 온톨로지 건강 상태를 분석하고 개선 방안을 제안합니다. 한국어로 간결하게 응답하세요.' }, { role: 'user', content: '온톨로지 건강 상태가 ' + $json.health_status + '입니다. 점수: ' + $json.health_score + '/100. 고아 노드: ' + $json.orphan_count + '개 (' + $json.orphan_percentage + '%). 노드당 평균 관계: ' + $json.avg_relations_per_node + '. 개선 방안을 3가지 제안해주세요.' }], max_tokens: 512 }) }}"
+        "jsonBody": "={{ JSON.stringify({ model: 'sonnet', messages: [{ role: 'system', content: '당신은 그래프 데이터베이스 전문가입니다. 온톨로지 건강 상태를 분석하고 개선 방안을 제안합니다. 한국어로 간결하게 응답하세요.' }, { role: 'user', content: '온톨로지 건강 상태가 ' + $json.health_status + '입니다. 점수: ' + $json.health_score + '/100. 고아 노드: ' + $json.orphan_count + '개 (' + $json.orphan_percentage + '%). 노드당 평균 관계: ' + $json.avg_relations_per_node + '. 개선 방안을 3가지 제안해주세요.' }], max_tokens: 512 }) }}"
       },
       "id": "get-recommendations",
       "name": "Get Recommendations",
@@ -135,18 +127,10 @@
     {
       "parameters": {
         "method": "PUT",
-        "url": "https://qdrant.saemiro.com/collections/cafe24_insights/points",
+        "url": "http://qdrant:6333/collections/cafe24_insights/points",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "CF-Access-Client-Id",
-              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
-            },
-            {
-              "name": "CF-Access-Client-Secret",
-              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
-            },
             {
               "name": "Content-Type",
               "value": "application/json"

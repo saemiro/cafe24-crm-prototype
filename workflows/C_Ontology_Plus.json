@@ -1,0 +1,213 @@
+{
+  "name": "Cafe24_CRM_C_Ontology_Plus",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crm/ontology-plus",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const input = $input.first().json;\nconst query = input.body?.query || input.query || '';\n\nreturn {\n  query: query,\n  timestamp: new Date().toISOString(),\n  requestId: Math.random().toString(36).substring(7)\n};"
+      },
+      "id": "parse-input",
+      "name": "Parse Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://qdrant.saemiro.com/collections/cafe24_crm_knowledge/points/search",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "33fc2fac58bf5237d16ac159db51b46b.access"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "7251ba3d0093523b81898e1df292ba8531b48db96d981224c8612fb1f3c1183c"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ vector: $json.embedding, limit: 3, with_payload: true }) }}"
+      },
+      "id": "qdrant-search",
+      "name": "Qdrant RAG Search",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 200]
+    },
+    {
+      "parameters": {
+        "query": "MATCH (c:CRM_Customer)-[r]->(related)\nWHERE c.name CONTAINS $keyword OR type(r) CONTAINS $keyword\nRETURN c, type(r) as relationship, related\nLIMIT 5",
+        "parameters": "={{ JSON.stringify({ keyword: $json.query.split(' ')[0] }) }}"
+      },
+      "id": "neo4j-query",
+      "name": "Neo4j Ontology Query",
+      "type": "n8n-nodes-base.neo4j",
+      "typeVersion": 1,
+      "position": [900, 400],
+      "credentials": {
+        "neo4j": {
+          "id": "neo4j-creds",
+          "name": "Neo4j"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const qdrantResults = $('Qdrant RAG Search').first().json;\nconst neo4jResults = $('Neo4j Ontology Query').all();\nconst originalQuery = $('Parse Input').first().json.query;\n\n// Combine RAG and Ontology context\nconst ragContext = qdrantResults.result?.map(r => \n  `Q: ${r.payload?.question}\\nA: ${r.payload?.answer?.substring(0, 300)}...`\n).join('\\n\\n') || 'No RAG results';\n\nconst ontologyContext = neo4jResults.map(r => \n  `Entity: ${r.json?.c?.properties?.name || 'Unknown'}, Relationship: ${r.json?.relationship}`\n).join('\\n') || 'No ontology results';\n\nconst systemPrompt = `당신은 Cafe24 CRM 전문가입니다.\n\n## RAG 컨텍스트 (Qdrant)\n${ragContext}\n\n## 온톨로지 컨텍스트 (Neo4j)\n${ontologyContext}\n\n위 컨텍스트를 활용하여 사용자 질문에 답변하세요.`;\n\nreturn {\n  systemPrompt,\n  userQuery: originalQuery,\n  ragContext,\n  ontologyContext\n};"
+      },
+      "id": "combine-context",
+      "name": "Combine RAG + Ontology",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://llm.saemiro.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer sk-litellm-master-key"
+            },
+            {
+              "name": "CF-Access-Client-Id",
+              "value": "33fc2fac58bf5237d16ac159db51b46b.access"
+            },
+            {
+              "name": "CF-Access-Client-Secret",
+              "value": "7251ba3d0093523b81898e1df292ba8531b48db96d981224c8612fb1f3c1183c"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'cafe24-crm-llama', messages: [{ role: 'system', content: $json.systemPrompt }, { role: 'user', content: $json.userQuery }], max_tokens: 500 }) }}"
+      },
+      "id": "llm-call",
+      "name": "LLM Response",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const llmResponse = $input.first().json;\nconst context = $('Combine RAG + Ontology').first().json;\n\nconst response = {\n  success: true,\n  query: $('Parse Input').first().json.query,\n  answer: llmResponse.choices?.[0]?.message?.content || 'No response',\n  model: llmResponse.model || 'cafe24-crm-llama',\n  sources: {\n    rag: 'cafe24_crm_knowledge (Qdrant)',\n    ontology: 'CRM Domain (Neo4j)'\n  },\n  usage: llmResponse.usage,\n  timestamp: new Date().toISOString()\n};\n\nreturn response;"
+      },
+      "id": "format-response",
+      "name": "Format Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}"
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.together.xyz/v1/embeddings",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer tgp_v1_i1L48AiWkmb2v9ycGiKWf-hqSwzzXfoVVbVt9TDbRMw"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ model: 'BAAI/bge-base-en-v1.5', input: $json.query }) }}"
+      },
+      "id": "create-embedding",
+      "name": "Create Embedding",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const embeddingResponse = $input.first().json;\nconst originalData = $('Parse Input').first().json;\n\nreturn {\n  ...originalData,\n  embedding: embeddingResponse.data?.[0]?.embedding || []\n};"
+      },
+      "id": "extract-embedding",
+      "name": "Extract Embedding",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 340]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [[{ "node": "Parse Input", "type": "main", "index": 0 }]]
+    },
+    "Parse Input": {
+      "main": [[{ "node": "Create Embedding", "type": "main", "index": 0 }]]
+    },
+    "Create Embedding": {
+      "main": [[{ "node": "Extract Embedding", "type": "main", "index": 0 }]]
+    },
+    "Extract Embedding": {
+      "main": [
+        [
+          { "node": "Qdrant RAG Search", "type": "main", "index": 0 },
+          { "node": "Neo4j Ontology Query", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Qdrant RAG Search": {
+      "main": [[{ "node": "Combine RAG + Ontology", "type": "main", "index": 0 }]]
+    },
+    "Neo4j Ontology Query": {
+      "main": [[{ "node": "Combine RAG + Ontology", "type": "main", "index": 0 }]]
+    },
+    "Combine RAG + Ontology": {
+      "main": [[{ "node": "LLM Response", "type": "main", "index": 0 }]]
+    },
+    "LLM Response": {
+      "main": [[{ "node": "Format Response", "type": "main", "index": 0 }]]
+    },
+    "Format Response": {
+      "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["cafe24", "crm", "ontology", "rag"]
+}

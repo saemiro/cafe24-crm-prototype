@@ -7,13 +7,13 @@
           "interval": [
             {
               "field": "cronExpression",
-              "expression": "0 */4 * * *"
+              "expression": "0 10,15 * * *"
             }
           ]
         }
       },
       "id": "cron-trigger",
-      "name": "Every 4 Hours",
+      "name": "Analyze 10AM & 3PM",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1.2,
       "position": [250, 300]
@@ -21,25 +21,17 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://neo4j.saemiro.com/db/neo4j/tx/commit",
+        "url": "http://neo4j:7474/db/neo4j/tx/commit",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "CF-Access-Client-Id",
-              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
-            },
-            {
-              "name": "CF-Access-Client-Secret",
-              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
-            },
             {
               "name": "Content-Type",
               "value": "application/json"
             },
             {
               "name": "Authorization",
-              "value": "Basic {{ Buffer.from($env.NEO4J_USER + ':' + $env.NEO4J_PASSWORD).toString('base64') }}"
+              "value": "Basic bmVvNGo6b250b2xvZ3kyMDI1"
             }
           ]
         },
@@ -56,18 +48,10 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://qdrant.saemiro.com/collections/cafe24_insights/points/scroll",
+        "url": "http://qdrant:6333/collections/cafe24_insights/points/scroll",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "CF-Access-Client-Id",
-              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
-            },
-            {
-              "name": "CF-Access-Client-Secret",
-              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
-            },
             {
               "name": "Content-Type",
               "value": "application/json"
@@ -97,13 +81,13 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://litellm:4000/chat/completions",
+        "url": "http://claude-wrapper:4001/v1/chat/completions",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer {{ $env.LITELLM_API_KEY }}"
+              "value": "Bearer sk-litellm-master-key"
             },
             {
               "name": "Content-Type",
@@ -113,7 +97,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: 'claude-3-5-sonnet-20241022', messages: [{ role: 'system', content: '당신은 E-commerce 코드 패턴 분석가입니다. CRM 엔티티 관계를 분석하고 재사용 가능한 코드 패턴을 식별합니다. 한국어로 응답하세요.' }, { role: 'user', content: $json.analysis_request }], max_tokens: 1024 }) }}"
+        "jsonBody": "={{ JSON.stringify({ model: 'sonnet', messages: [{ role: 'system', content: '당신은 E-commerce 코드 패턴 분석가입니다. CRM 엔티티 관계를 분석하고 재사용 가능한 코드 패턴을 식별합니다. 한국어로 응답하세요.' }, { role: 'user', content: $json.analysis_request }], max_tokens: 1024 }) }}"
       },
       "id": "analyze-patterns",
       "name": "Analyze Patterns",
@@ -151,18 +135,10 @@
     {
       "parameters": {
         "method": "PUT",
-        "url": "https://qdrant.saemiro.com/collections/cafe24_insights/points",
+        "url": "http://qdrant:6333/collections/cafe24_insights/points",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "CF-Access-Client-Id",
-              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
-            },
-            {
-              "name": "CF-Access-Client-Secret",
-              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
-            },
             {
               "name": "Content-Type",
               "value": "application/json"

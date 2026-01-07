@@ -17,18 +17,10 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://qdrant.saemiro.com/collections/cafe24_api_docs/points/search",
+        "url": "http://qdrant:6333/collections/cafe24_api_docs/points/search",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "CF-Access-Client-Id",
-              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
-            },
-            {
-              "name": "CF-Access-Client-Secret",
-              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
-            },
             {
               "name": "Content-Type",
               "value": "application/json"
@@ -48,25 +40,17 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://neo4j.saemiro.com/db/neo4j/tx/commit",
+        "url": "http://neo4j:7474/db/neo4j/tx/commit",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "CF-Access-Client-Id",
-              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
-            },
-            {
-              "name": "CF-Access-Client-Secret",
-              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
-            },
             {
               "name": "Content-Type",
               "value": "application/json"
             },
             {
               "name": "Authorization",
-              "value": "Basic {{ Buffer.from($env.NEO4J_USER + ':' + $env.NEO4J_PASSWORD).toString('base64') }}"
+              "value": "Basic bmVvNGo6b250b2xvZ3kyMDI1"
             }
           ]
         },
@@ -89,7 +73,7 @@
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer {{ $env.LITELLM_API_KEY }}"
+              "value": "Bearer sk-litellm-master-key"
             },
             {
               "name": "Content-Type",
@@ -120,13 +104,13 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://litellm:4000/chat/completions",
+        "url": "http://claude-wrapper:4001/v1/chat/completions",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer {{ $env.LITELLM_API_KEY }}"
+              "value": "Bearer sk-litellm-master-key"
             },
             {
               "name": "Content-Type",
@@ -136,7 +120,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: 'claude-3-5-sonnet-20241022', messages: [{ role: 'user', content: $json.prompt }], max_tokens: 4096 }) }}"
+        "jsonBody": "={{ JSON.stringify({ model: 'sonnet', messages: [{ role: 'user', content: $json.prompt }], max_tokens: 4096 }) }}"
       },
       "id": "llm-generate",
       "name": "LLM Generate",
@@ -146,7 +130,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const llmResponse = $json.choices?.[0]?.message?.content || 'Error generating code';\nconst userRequest = $('Merge Context').first().json.userRequest;\n\nreturn {\n  request: userRequest,\n  response: llmResponse,\n  model: 'claude-3-5-sonnet-20241022',\n  method: 'ontology_plus_rag',\n  timestamp: new Date().toISOString()\n};"
+        "jsCode": "const llmResponse = $json.choices?.[0]?.message?.content || 'Error generating code';\nconst userRequest = $('Merge Context').first().json.userRequest;\n\nreturn {\n  request: userRequest,\n  response: llmResponse,\n  model: 'sonnet',\n  method: 'ontology_plus_rag',\n  timestamp: new Date().toISOString()\n};"
       },
       "id": "format-response",
       "name": "Format Response",

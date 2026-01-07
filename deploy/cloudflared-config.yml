@@ -1,0 +1,66 @@
+tunnel: b606e314-065f-4e5a-972f-59b49a42ebed
+credentials-file: /etc/cloudflared/b606e314-065f-4e5a-972f-59b49a42ebed.json
+
+ingress:
+  # Cafe24 CRM 프로토타입 (신규)
+  - hostname: crm.saemiro.com
+    service: http://localhost:3005
+  - hostname: crm-api.saemiro.com
+    service: http://localhost:8089
+
+  # Cafe24 CRM Prototype Dashboard (기존 데모)
+  - hostname: cafe24-crm.saemiro.com
+    service: http://localhost:8091
+
+  # cafe24-auth API
+  - hostname: cafe24-auth.saemiro.com
+    service: http://localhost:8082
+
+  # Terraform 시각화
+  - hostname: terraform.saemiro.com
+    service: http://localhost:8090
+
+  # 모니터링 스택
+  - hostname: grafana.saemiro.com
+    service: http://localhost:3030
+  - hostname: prometheus.saemiro.com
+    service: http://localhost:9090
+  - hostname: loki.saemiro.com
+    service: http://localhost:3100
+
+  # RAG API
+  - hostname: rag.saemiro.com
+    service: http://localhost:8088
+
+  # 기존 서비스
+  - hostname: saemiro.com
+    service: http://localhost:8080
+  - hostname: www.saemiro.com
+    service: http://localhost:8080
+  - hostname: ai.saemiro.com
+    service: http://localhost:3002
+  - hostname: flow.saemiro.com
+    service: http://localhost:3003
+  - hostname: db.saemiro.com
+    service: http://localhost:8081
+  - hostname: home.saemiro.com
+    service: http://localhost:3000
+  - hostname: n8n.saemiro.com
+    service: http://localhost:5678
+  - hostname: llm.saemiro.com
+    service: http://localhost:4000
+  - hostname: qdrant.saemiro.com
+    service: http://localhost:6333
+  - hostname: portainer.saemiro.com
+    service: http://localhost:9000
+  - hostname: status.saemiro.com
+    service: http://localhost:3001
+
+  # i5 데이터 파이프라인 (via Tailscale)
+  - hostname: airflow.saemiro.com
+    service: http://100.113.181.128:8080
+  - hostname: queue.saemiro.com
+    service: http://100.113.181.128:4566
+
+  # 기본 (매칭되지 않는 요청)
+  - service: http_status:404

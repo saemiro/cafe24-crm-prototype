@@ -17,13 +17,13 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://litellm:4000/chat/completions",
+        "url": "http://claude-wrapper:4001/v1/chat/completions",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
               "name": "Authorization",
-              "value": "Bearer {{ $env.LITELLM_API_KEY }}"
+              "value": "Bearer sk-litellm-master-key"
             },
             {
               "name": "Content-Type",
@@ -33,7 +33,7 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ model: 'claude-3-5-sonnet-20241022', messages: [{ role: 'system', content: '당신은 E-commerce CRM 코드 생성 전문가입니다. Cafe24 플랫폼용 코드를 작성해주세요.' }, { role: 'user', content: $json.body.request }], max_tokens: 4096 }) }}"
+        "jsonBody": "={{ JSON.stringify({ model: 'sonnet', messages: [{ role: 'system', content: '당신은 E-commerce CRM 코드 생성 전문가입니다. Cafe24 플랫폼용 코드를 작성해주세요.' }, { role: 'user', content: $json.body.request }], max_tokens: 4096 }) }}"
       },
       "id": "llm-baseline",
       "name": "LLM Baseline",
@@ -43,7 +43,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const llmResponse = $json.choices?.[0]?.message?.content || 'Error generating code';\nconst userRequest = $('Webhook').first().json.body.request;\n\nreturn {\n  request: userRequest,\n  response: llmResponse,\n  model: 'claude-3-5-sonnet-20241022',\n  method: 'baseline',\n  context_type: 'none',\n  timestamp: new Date().toISOString()\n};"
+        "jsCode": "const llmResponse = $json.choices?.[0]?.message?.content || 'Error generating code';\nconst userRequest = $('Webhook').first().json.body.request;\n\nreturn {\n  request: userRequest,\n  response: llmResponse,\n  model: 'sonnet',\n  method: 'baseline',\n  context_type: 'none',\n  timestamp: new Date().toISOString()\n};"
       },
       "id": "format-response",
       "name": "Format Response",

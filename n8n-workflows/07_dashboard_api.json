@@ -43,25 +43,17 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://neo4j.saemiro.com/db/neo4j/tx/commit",
+        "url": "http://neo4j:7474/db/neo4j/tx/commit",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "CF-Access-Client-Id",
-              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
-            },
-            {
-              "name": "CF-Access-Client-Secret",
-              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
-            },
             {
               "name": "Content-Type",
               "value": "application/json"
             },
             {
               "name": "Authorization",
-              "value": "Basic {{ Buffer.from($env.NEO4J_USER + ':' + $env.NEO4J_PASSWORD).toString('base64') }}"
+              "value": "Basic bmVvNGo6b250b2xvZ3kyMDI1"
             }
           ]
         },
@@ -78,17 +70,13 @@
     {
       "parameters": {
         "method": "GET",
-        "url": "https://qdrant.saemiro.com/collections",
+        "url": "http://qdrant:6333/collections",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
-              "name": "CF-Access-Client-Id",
-              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
-            },
-            {
-              "name": "CF-Access-Client-Secret",
-              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         }
@@ -196,18 +184,10 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "https://qdrant.saemiro.com/collections/cafe24_insights/points/scroll",
+        "url": "http://qdrant:6333/collections/cafe24_insights/points/scroll",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
-            {
-              "name": "CF-Access-Client-Id",
-              "value": "={{ $env.CF_ACCESS_CLIENT_ID }}"
-            },
-            {
-              "name": "CF-Access-Client-Secret",
-              "value": "={{ $env.CF_ACCESS_CLIENT_SECRET }}"
-            },
             {
               "name": "Content-Type",
               "value": "application/json"
