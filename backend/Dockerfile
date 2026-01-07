@@ -1,5 +1,8 @@
 FROM eclipse-temurin:17-jdk-alpine AS builder
 
+# Install bash for gradle wrapper compatibility
+RUN apk add --no-cache bash
+
 WORKDIR /app
 
 # Copy gradle files
@@ -7,12 +10,12 @@ COPY build.gradle settings.gradle ./
 COPY gradle gradle
 COPY gradlew ./
 
-# Download dependencies
-RUN chmod +x gradlew && ./gradlew dependencies --no-daemon
+# Download dependencies (use bash explicitly for gradlew)
+RUN chmod +x gradlew && bash ./gradlew dependencies --no-daemon
 
 # Copy source and build
 COPY src src
-RUN ./gradlew bootJar --no-daemon
+RUN bash ./gradlew bootJar --no-daemon
 
 # Runtime image
 FROM eclipse-temurin:17-jre-alpine
