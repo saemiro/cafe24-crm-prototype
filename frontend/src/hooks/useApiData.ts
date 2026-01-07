@@ -1,21 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
-import type {
-  DashboardStats,
-  RevenueChartData,
-  SegmentDistribution,
-  RecentOrder,
-  TopCustomer,
-  RfmSegment,
-  FunnelStep,
-  CohortRow,
-  Customer,
-  CustomerDetail,
-  Order,
-  ProductRecommendation,
-  Campaign,
-  PaginatedResponse,
-} from '../api/client';
 
 // Import mock data as fallback
 import {
@@ -40,35 +24,6 @@ import {
 
 // Flag to control API vs Mock - can be controlled via environment variable
 const USE_REAL_API = import.meta.env.VITE_USE_REAL_API !== 'false';
-
-// Helper to create API query with mock fallback
-function createApiQuery<T>(
-  queryKey: unknown[],
-  apiFn: () => Promise<{ data: T }>,
-  mockHook: () => { data: T | undefined; isLoading: boolean; error: unknown },
-  enabled = true
-) {
-  // If real API is disabled, return mock data
-  if (!USE_REAL_API) {
-    return mockHook();
-  }
-
-  return useQuery({
-    queryKey,
-    queryFn: async () => {
-      try {
-        const response = await apiFn();
-        return response.data;
-      } catch (error) {
-        console.warn(`API call failed for ${queryKey.join('/')}, falling back to mock data:`, error);
-        throw error;
-      }
-    },
-    retry: 1,
-    staleTime: 30000,
-    enabled,
-  });
-}
 
 // Dashboard Stats with API call
 export function useDashboardStats() {
