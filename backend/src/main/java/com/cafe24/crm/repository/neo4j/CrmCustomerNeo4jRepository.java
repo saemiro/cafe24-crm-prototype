@@ -123,7 +123,7 @@ public interface CrmCustomerNeo4jRepository extends Neo4jRepository<CrmCustomerN
      */
     @Query("""
             MATCH (c:CRM_Customer)
-            RETURN count(c) AS totalCustomers
+            RETURN count(c)
             """)
     Long getTotalCustomerCount();
 
@@ -134,7 +134,7 @@ public interface CrmCustomerNeo4jRepository extends Neo4jRepository<CrmCustomerN
             MATCH (c:CRM_Customer)
             WHERE c.days_since_last_purchase IS NOT NULL
               AND c.days_since_last_purchase <= 90
-            RETURN count(c) AS activeCustomers
+            RETURN count(c)
             """)
     Long getActiveCustomerCount();
 
@@ -144,7 +144,7 @@ public interface CrmCustomerNeo4jRepository extends Neo4jRepository<CrmCustomerN
     @Query("""
             MATCH (c:CRM_Customer)
             WHERE c.total_revenue IS NOT NULL
-            RETURN sum(c.total_revenue) AS totalRevenue
+            RETURN sum(c.total_revenue)
             """)
     Double getTotalRevenue();
 
@@ -154,7 +154,7 @@ public interface CrmCustomerNeo4jRepository extends Neo4jRepository<CrmCustomerN
     @Query("""
             MATCH (c:CRM_Customer)
             WHERE c.clv IS NOT NULL
-            RETURN avg(c.clv) AS avgClv
+            RETURN avg(c.clv)
             """)
     Double getAverageClv();
 

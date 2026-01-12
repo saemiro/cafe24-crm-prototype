@@ -202,7 +202,7 @@ public interface CrmOrderNeo4jRepository extends Neo4jRepository<CrmOrderNode, S
      */
     @Query("""
             MATCH (o:CRM_Order)
-            RETURN count(o) AS totalOrders
+            RETURN count(o)
             """)
     Long getTotalOrderCount();
 
@@ -212,7 +212,7 @@ public interface CrmOrderNeo4jRepository extends Neo4jRepository<CrmOrderNode, S
     @Query("""
             MATCH (o:CRM_Order)
             WHERE o.status IS NULL OR o.status <> 'cancelled'
-            RETURN sum(o.total_amount) AS totalRevenue
+            RETURN sum(o.total_amount)
             """)
     Double getTotalRevenue();
 
@@ -223,7 +223,7 @@ public interface CrmOrderNeo4jRepository extends Neo4jRepository<CrmOrderNode, S
             MATCH (o:CRM_Order)
             WHERE o.total_amount IS NOT NULL
               AND (o.status IS NULL OR o.status <> 'cancelled')
-            RETURN avg(o.total_amount) AS avgOrderValue
+            RETURN avg(o.total_amount)
             """)
     Double getAverageOrderValue();
 

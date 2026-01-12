@@ -218,7 +218,7 @@ public interface CrmProductNeo4jRepository extends Neo4jRepository<CrmProductNod
      */
     @Query("""
             MATCH (p:CRM_Product)
-            RETURN count(p) AS totalProducts
+            RETURN count(p)
             """)
     Long getTotalProductCount();
 
