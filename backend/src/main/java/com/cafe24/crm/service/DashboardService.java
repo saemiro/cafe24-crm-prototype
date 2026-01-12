@@ -31,53 +31,72 @@ public class DashboardService {
 
     /**
      * Get overall dashboard statistics
+     * Each query is wrapped in try-catch to handle missing properties gracefully
      */
     public DashboardStatsDTO getDashboardStats() {
         log.debug("Fetching dashboard statistics");
 
+        Long totalCustomers = safeQuery(() -> customerRepository.getTotalCustomerCount(), 0L, "totalCustomers");
+        Long activeCustomers = safeQuery(() -> customerRepository.getActiveCustomerCount(), 0L, "activeCustomers");
+        Long totalOrders = safeQuery(() -> orderRepository.getTotalOrderCount(), 0L, "totalOrders");
+        Double totalRevenue = safeQuery(() -> orderRepository.getTotalRevenue(), 0.0, "totalRevenue");
+        Double avgOrderValue = safeQuery(() -> orderRepository.getAverageOrderValue(), 0.0, "avgOrderValue");
+        Double avgClv = safeQuery(() -> customerRepository.getAverageClv(), 0.0, "avgClv");
+        Long totalProducts = safeQuery(() -> productRepository.getTotalProductCount(), 0L, "totalProducts");
+
+        // Get segment count
+        int segmentCount = 0;
         try {
-            Long totalCustomers = customerRepository.getTotalCustomerCount();
-            Long activeCustomers = customerRepository.getActiveCustomerCount();
-            Long totalOrders = orderRepository.getTotalOrderCount();
-            Double totalRevenue = orderRepository.getTotalRevenue();
-            Double avgOrderValue = orderRepository.getAverageOrderValue();
-            Double avgClv = customerRepository.getAverageClv();
-            Long totalProducts = productRepository.getTotalProductCount();
-
-            // Get segment count
             List<Map<String, Object>> segments = customerRepository.countBySegment();
-            int segmentCount = segments != null ? segments.size() : 0;
-
-            // Get repeat purchase rate
-            Map<String, Object> repeatRate = orderRepository.getRepeatPurchaseRate();
-            Double repeatPurchaseRate = repeatRate != null ?
-                    ((Number) repeatRate.getOrDefault("repeatRate", 0)).doubleValue() : 0.0;
-
-            // Get at-risk customers count
-            List<?> atRiskCustomers = customerRepository.getAtRiskCustomers(1000);
-            Long atRiskCount = atRiskCustomers != null ? (long) atRiskCustomers.size() : 0L;
-
-            return DashboardStatsDTO.builder()
-                    .totalCustomers(totalCustomers != null ? totalCustomers : 0L)
-                    .activeCustomers(activeCustomers != null ? activeCustomers : 0L)
-                    .totalOrders(totalOrders != null ? totalOrders : 0L)
-                    .totalRevenue(totalRevenue != null ? totalRevenue : 0.0)
-                    .averageOrderValue(avgOrderValue != null ? Math.round(avgOrderValue * 100) / 100.0 : 0.0)
-                    .averageClv(avgClv != null ? Math.round(avgClv * 100) / 100.0 : 0.0)
-                    .segmentCount(segmentCount)
-                    .repeatPurchaseRate(repeatPurchaseRate)
-                    .totalProducts(totalProducts != null ? totalProducts : 0L)
-                    .atRiskCustomers(atRiskCount)
-                    .build();
-
+            segmentCount = segments != null ? segments.size() : 0;
         } catch (Exception e) {
-            log.error("Error fetching dashboard stats: {}", e.getMessage(), e);
-            return DashboardStatsDTO.builder()
-                    .totalCustomers(0L)
-                    .activeCustomers(0L)
-                    .totalOrders(0L)
-                    .totalRevenue(0.0)
-                    .build();
+            log.warn("Failed to fetch segment count: {}", e.getMessage());
+        }
+
+        // Get repeat purchase rate
+        Double repeatPurchaseRate = 0.0;
+        try {
+            Map<String, Object> repeatRate = orderRepository.getRepeatPurchaseRate();
+            if (repeatRate != null) {
+                repeatPurchaseRate = ((Number) repeatRate.getOrDefault("repeatRate", 0)).doubleValue();
+            }
+        } catch (Exception e) {
+            log.warn("Failed to fetch repeat purchase rate: {}", e.getMessage());
+        }
+
+        // Get at-risk customers count
+        Long atRiskCount = 0L;
+        try {
+            List<?> atRiskCustomers = customerRepository.getAtRiskCustomers(1000);
+            atRiskCount = atRiskCustomers != null ? (long) atRiskCustomers.size() : 0L;
+        } catch (Exception e) {
+            log.warn("Failed to fetch at-risk customers: {}", e.getMessage());
+        }
+
+        return DashboardStatsDTO.builder()
+                .totalCustomers(totalCustomers != null ? totalCustomers : 0L)
+                .activeCustomers(activeCustomers != null ? activeCustomers : 0L)
+                .totalOrders(totalOrders != null ? totalOrders : 0L)
+                .totalRevenue(totalRevenue != null ? totalRevenue : 0.0)
+                .averageOrderValue(avgOrderValue != null ? Math.round(avgOrderValue * 100) / 100.0 : 0.0)
+                .averageClv(avgClv != null ? Math.round(avgClv * 100) / 100.0 : 0.0)
+                .segmentCount(segmentCount)
+                .repeatPurchaseRate(repeatPurchaseRate)
+                .totalProducts(totalProducts != null ? totalProducts : 0L)
+                .atRiskCustomers(atRiskCount)
+                .build();
+    }
+
+    /**
+     * Safe query wrapper that catches exceptions and returns default value
+     */
+    private <T> T safeQuery(java.util.function.Supplier<T> query, T defaultValue, String queryName) {
+        try {
+            T result = query.get();
+            return result != null ? result : defaultValue;
+        } catch (Exception e) {
+            log.warn("Failed to execute query '{}': {}", queryName, e.getMessage());
+            return defaultValue;
         }
     }
 
