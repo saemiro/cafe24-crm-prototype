@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   Users,
@@ -9,18 +9,20 @@ import {
   GitBranch,
   Sparkles,
   Megaphone,
-} from 'lucide-react';
-import { useAuthStore } from '../store/authStore';
+  Palette,
+} from "lucide-react";
+import { useAuthStore } from "../store/authStore";
 
 const navItems = [
-  { path: '/', icon: LayoutDashboard, label: '대시보드' },
-  { path: '/customers', icon: Users, label: '고객 관리' },
-  { path: '/rfm', icon: PieChart, label: 'RFM 분석' },
-  { path: '/funnel', icon: TrendingUp, label: '퍼널 분석' },
-  { path: '/cohort', icon: GitBranch, label: '코호트 분석' },
-  { path: '/recommendations', icon: Sparkles, label: '상품 추천' },
-  { path: '/campaigns', icon: Megaphone, label: '캠페인' },
-  { path: '/ai-insights', icon: Brain, label: 'AI 인사이트' },
+  { path: "/", icon: LayoutDashboard, label: "대시보드" },
+  { path: "/customers", icon: Users, label: "고객 관리" },
+  { path: "/rfm", icon: PieChart, label: "RFM 분석" },
+  { path: "/funnel", icon: TrendingUp, label: "퍼널 분석" },
+  { path: "/cohort", icon: GitBranch, label: "코호트 분석" },
+  { path: "/recommendations", icon: Sparkles, label: "상품 추천" },
+  { path: "/campaigns", icon: Megaphone, label: "캠페인" },
+  { path: "/ai-insights", icon: Brain, label: "AI 인사이트" },
+  { path: "/components", icon: Palette, label: "컴포넌트 데모" },
 ];
 
 export function Layout() {
@@ -29,7 +31,7 @@ export function Layout() {
 
   const handleLogout = () => {
     logout();
-    navigate('/login');
+    navigate("/login");
   };
 
   return (
@@ -51,8 +53,8 @@ export function Layout() {
               className={({ isActive }) =>
                 `flex items-center px-6 py-3 text-sm font-medium transition-colors ${
                   isActive
-                    ? 'bg-cafe24-primary/10 text-cafe24-primary border-r-2 border-cafe24-primary'
-                    : 'text-gray-600 hover:bg-gray-50'
+                    ? "bg-cafe24-primary/10 text-cafe24-primary border-r-2 border-cafe24-primary"
+                    : "text-gray-600 hover:bg-gray-50"
                 }`
               }
             >
