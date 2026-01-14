@@ -1,20 +1,21 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Layout } from './components/Layout';
-import { Dashboard } from './pages/Dashboard';
-import { Login } from './pages/Login';
-import { Customers } from './pages/Customers';
-import { CustomerDetail } from './pages/CustomerDetail';
-import { RfmAnalysis } from './pages/RfmAnalysis';
-import { FunnelAnalysis } from './pages/FunnelAnalysis';
-import { CohortAnalysis } from './pages/CohortAnalysis';
-import { Recommendations } from './pages/Recommendations';
-import { Campaigns } from './pages/Campaigns';
-import { AiInsights } from './pages/AiInsights';
-import { Callback } from './pages/Callback';
-import { AuthSuccess } from './pages/AuthSuccess';
-import { AuthError } from './pages/AuthError';
-import { useAuthStore } from './store/authStore';
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Layout } from "./components/Layout";
+import { Dashboard } from "./pages/Dashboard";
+import { Login } from "./pages/Login";
+import { Customers } from "./pages/Customers";
+import { CustomerDetail } from "./pages/CustomerDetail";
+import { RfmAnalysis } from "./pages/RfmAnalysis";
+import { FunnelAnalysis } from "./pages/FunnelAnalysis";
+import { CohortAnalysis } from "./pages/CohortAnalysis";
+import { Recommendations } from "./pages/Recommendations";
+import { Campaigns } from "./pages/Campaigns";
+import { AiInsights } from "./pages/AiInsights";
+import { ComponentDemo } from "./pages/ComponentDemo";
+import { Callback } from "./pages/Callback";
+import { AuthSuccess } from "./pages/AuthSuccess";
+import { AuthError } from "./pages/AuthError";
+import { useAuthStore } from "./store/authStore";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -56,6 +57,7 @@ function App() {
             <Route path="recommendations" element={<Recommendations />} />
             <Route path="campaigns" element={<Campaigns />} />
             <Route path="ai-insights" element={<AiInsights />} />
+            <Route path="components" element={<ComponentDemo />} />
           </Route>
         </Routes>
       </BrowserRouter>
